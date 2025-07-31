@@ -135,7 +135,7 @@
             <button id="back-btn" class="text-sky-500 text-2xl mr-4 w-8 h-8 flex items-center justify-center active:bg-slate-700 rounded-full">‹</button>
             <h2 id="detail-header-title" class="text-lg font-bold truncate">個股詳情</h2>
         </header>
-        <div id="detail-content-wrapper" class="overflow-y-auto h-[calc(100vh-65px)]">
+        <div id="detail-content-wrapper" class="px-4 py-4 overflow-y-auto h-[calc(100vh-65px)]">
              <div id="detail-content">
                 <!-- Detail content will be injected here -->
             </div>
@@ -183,8 +183,8 @@ const firebaseConfig = {
 const App = {
     state: {
         currentView: 'watchlist',
-        watchlistMarketView: 'US', // 改為美股優先
-        scannerMarketView: 'US',   // 改為美股優先
+        watchlistMarketView: 'US',
+        scannerMarketView: 'US',
         watchlist: [], 
         selectedStock: null,
         detailViewTab: 'analysis',
@@ -254,7 +254,7 @@ const App = {
                 const data = doc.data();
                 this.state.watchlist = Array.isArray(data.watchlist) ? data.watchlist : [];
             } else {
-                this.state.watchlist = ['AAPL.US', '2330.TW']; // 預設值
+                this.state.watchlist = ['AAPL.US', '2330.TW'];
                 docRef.set({ watchlist: this.state.watchlist });
             }
             this.fetchAllWatchlistData();
@@ -401,7 +401,6 @@ const App = {
         container.innerHTML = '';
         const filteredList = this.state.watchlist
             .filter(symbol => {
-                // *** FIX: Check if symbol suffix matches the market view ***
                 const market = symbol.endsWith('.TW') ? 'TW' : 'US';
                 return market === this.state.watchlistMarketView;
             })
@@ -720,7 +719,7 @@ const App = {
                             <div class="price-range-bar-tick bg-sky-400" style="left: ${tickLeft}%;"></div>
                         </div>
                     </div>
-                    <span class="w-28 text-right font-semibold text-slate-300">${day.low.toFixed(2)}~${day.high.toFixed(2)}</span>
+                    <span class="w-28 text-right font-semibold text-slate-300">$${day.low.toFixed(2)}~${day.high.toFixed(2)}</span>
                 </div>
             `;
         });
