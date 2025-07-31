@@ -24,6 +24,10 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.1.1/dist/chartjs-chart-financial.min.js"></script>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
     <style>
         body {
             -webkit-tap-highlight-color: transparent;
@@ -163,6 +167,16 @@
 
 
 <script>
+const firebaseConfig = {
+    apiKey: "AIzaSyD-L_CZh3q-wyFllu9ufjetNMCetR-7e9s",
+    authDomain: "stockwise-ad5e9.firebaseapp.com",
+    projectId: "stockwise-ad5e9",
+    storageBucket: "stockwise-ad5e9.firebasestorage.app",
+    messagingSenderId: "516174960400",
+    appId: "1:516174960400:web:9637299797e4f38d297795",
+    measurementId: "G-XWRSK9XSHC"
+};
+
 const App = {
     state: {
         currentView: 'watchlist',
