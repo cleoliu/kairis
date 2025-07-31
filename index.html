@@ -182,7 +182,7 @@ const App = {
         currentView: 'watchlist',
         watchlistMarketView: 'TW',
         scannerMarketView: 'TW',
-        watchlist: ['2330.TW', '0050.TW', 'AAPL.US', 'NVDA.US'],
+        watchlist: [], // 改為從 Firebase 或 LocalStorage 讀取
         selectedStock: null,
         detailViewTab: 'analysis',
         previousView: 'watchlist',
@@ -191,12 +191,17 @@ const App = {
         advancedChartInstance: null,
         stockDataCache: {},
         isLoading: false,
+        // Firebase 相關 state
+        db: null,
+        auth: null,
+        userId: null,
+        watchlistUnsubscribe: null, // 用來取消監聽
     },
 
-    init() {
+    async init() {
         this.setupEventListeners();
         this.updateTime();
-        this.fetchAllWatchlistData(); // Initial data fetch
+        await this.initFirebase(); // 初始化 Firebase
         setInterval(() => {
             this.updateTime();
             if(this.state.currentView !== 'detail') {
@@ -204,6 +209,72 @@ const App = {
             }
         }, 60000);
     },
+
+    // *** START: Firebase Integration FIX ***
+    async initFirebase() {
+        // 檢查 firebaseConfig 是否為 placeholder
+        if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+            console.warn("Firebase 未設定，自選股清單將儲存在本機瀏覽器中。若要啟用雲端同步，請在 index.html 中填入您的 firebaseConfig。");
+            this.loadWatchlistFromLocalStorage();
+            return;
+        }
+
+        try {
+            firebase.initializeApp(firebaseConfig);
+            this.state.db = firebase.firestore();
+            this.state.auth = firebase.auth();
+
+            this.state.auth.onAuthStateChanged(user => {
+                if (user) {
+                    this.state.userId = user.uid;
+                    this.loadWatchlistFromFirestore();
+                } else {
+                    this.state.auth.signInAnonymously().catch(error => {
+                        console.error("匿名登入失敗:", error);
+                        // 登入失敗時，降級為本機儲存
+                        this.loadWatchlistFromLocalStorage();
+                    });
+                }
+            });
+        } catch (error) {
+            console.error("Firebase 初始化失敗:", error);
+            // 初始化失敗時，降級為本機儲存
+            this.loadWatchlistFromLocalStorage();
+        }
+    },
+
+    loadWatchlistFromFirestore() {
+        if (this.state.watchlistUnsubscribe) {
+            this.state.watchlistUnsubscribe();
+        }
+        if (!this.state.userId) return;
+
+        const docRef = this.state.db.collection('users').doc(this.state.userId);
+        
+        this.state.watchlistUnsubscribe = docRef.onSnapshot(doc => {
+            if (doc.exists) {
+                const data = doc.data();
+                this.state.watchlist = Array.isArray(data.watchlist) ? data.watchlist : [];
+            } else {
+                this.state.watchlist = ['2330.TW', 'AAPL.US']; // 預設值
+                docRef.set({ watchlist: this.state.watchlist });
+            }
+            this.fetchAllWatchlistData();
+        }, error => {
+            console.error("讀取 watchlist 失敗:", error);
+        });
+    },
+    
+    loadWatchlistFromLocalStorage() {
+        const saved = localStorage.getItem('stockwise_watchlist');
+        this.state.watchlist = saved ? JSON.parse(saved) : ['2330.TW', 'AAPL.US']; // 預設值
+        this.fetchAllWatchlistData();
+    },
+
+    saveWatchlistToLocalStorage() {
+        localStorage.setItem('stockwise_watchlist', JSON.stringify(this.state.watchlist));
+    },
+    // *** END: Firebase Integration FIX ***
 
     updateTime() {
         this.state.lastUpdated = new Date();
@@ -800,11 +871,18 @@ const App = {
         
         if (stockData.error) {
             feedbackEl.textContent = `新增失敗: ${stockData.error}`;
-            delete this.state.stockDataCache[symbol];
         } else {
-            this.state.watchlist.unshift(symbol);
-            this.render();
-            this.toggleModal(false);
+            const newWatchlist = [symbol, ...this.state.watchlist];
+            if (this.state.userId) { // Firebase mode
+                this.state.db.collection('users').doc(this.state.userId).set({ watchlist: newWatchlist })
+                    .then(() => this.toggleModal(false))
+                    .catch(error => feedbackEl.textContent = `新增失敗: ${error.message}`);
+            } else { // LocalStorage mode
+                this.state.watchlist = newWatchlist;
+                this.saveWatchlistToLocalStorage();
+                this.render();
+                this.toggleModal(false);
+            }
         }
 
         addButton.disabled = false;
@@ -812,9 +890,15 @@ const App = {
     },
 
     removeStock(symbol) {
-        this.state.watchlist = this.state.watchlist.filter(s => s !== symbol);
-        delete this.state.stockDataCache[symbol];
-        this.render();
+        const newWatchlist = this.state.watchlist.filter(s => s !== symbol);
+        if (this.state.userId) { // Firebase mode
+            this.state.db.collection('users').doc(this.state.userId).set({ watchlist: newWatchlist })
+                .catch(error => console.error("移除股票失敗:", error));
+        } else { // LocalStorage mode
+            this.state.watchlist = newWatchlist;
+            this.saveWatchlistToLocalStorage();
+            this.render();
+        }
     },
 
     calculateIndicators(stockData) {
