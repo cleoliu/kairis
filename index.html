@@ -168,7 +168,6 @@ const App = {
         currentView: 'watchlist',
         watchlistMarketView: 'TW',
         scannerMarketView: 'TW',
-        // 初始自選股清單，未來會從 Firebase 讀取
         watchlist: ['2330.TW', '0050.TW', 'AAPL.US', 'NVDA.US'],
         selectedStock: null,
         detailViewTab: 'analysis',
@@ -176,79 +175,51 @@ const App = {
         isGeminiLoading: false,
         lastUpdated: null,
         advancedChartInstance: null,
-        // 新增：資料快取，避免重複請求 API
-        stockDataCache: {},
-        // 新增：全局載入狀態
-        isLoading: false,
     },
     
-    // 移除 mockData
+    mockData: {
+        '2330.TW': { name: '台積電', market: 'TW', currency: 'NT$', history: [], price: 925.00, change: 5.00, changePercent: 0.54, high: 930.00, low: 920.00, pe: 25.5 },
+        '0050.TW': { name: '元大台灣50', market: 'TW', currency: 'NT$', history: [], price: 175.50, change: -1.20, changePercent: -0.68, high: 177.00, low: 175.00, pe: null },
+        'AAPL.US': { name: 'Apple Inc.', market: 'US', currency: '$', history: [], price: 215.30, change: 2.10, changePercent: 0.98, high: 216.00, low: 214.50, pe: 32.8 },
+        'NVDA.US': { name: 'NVIDIA Corp', market: 'US', currency: '$', history: [], price: 125.10, change: -1.50, changePercent: -1.18, high: 127.00, low: 124.50, pe: 70.2 },
+        'TSLA.US': { name: 'Tesla, Inc.', market: 'US', currency: '$', history: [], price: 185.60, change: 3.10, changePercent: 1.69, high: 188.00, low: 184.00, pe: 45.1 },
+        '2454.TW': { name: '聯發科', market: 'TW', currency: 'NT$', history: [], price: 1350.00, change: -20.00, changePercent: -1.46, high: 1380.00, low: 1345.00, pe: 30.1 },
+    },
 
     init() {
-        // 移除 generateHistory()
+        this.generateHistory();
         this.setupEventListeners();
         this.updateTime();
         this.render();
-        // 調整：將更新頻率改為 1 分鐘，以符合 API 免費方案限制
         setInterval(() => {
+            this.simulatePriceUpdate();
             this.updateTime();
             if(this.state.currentView !== 'detail') {
-                this.fetchAllWatchlistData(true); // 傳入 true 強制刷新
+                this.render();
             }
-        }, 60000);
+        }, 5000);
     },
 
     updateTime() {
         this.state.lastUpdated = new Date();
     },
 
-    // 新增：核心資料獲取函式
-    async fetchStockData(symbol, forceRefresh = false) {
-        // 如果快取中有資料且不是強制刷新，直接回傳快取
-        if (this.state.stockDataCache[symbol] && !forceRefresh) {
-            return this.state.stockDataCache[symbol];
-        }
-        
-        // 標記特定股票正在載入
-        this.state.stockDataCache[symbol] = { isLoading: true };
-        this.render(); // 重新渲染以顯示載入狀態
-
-        try {
-            const response = await fetch(`/api/get-stock-data?symbol=${symbol}`);
-            const data = await response.json();
-
-            if (!response.ok) {
-                // 如果 API 回傳錯誤，將錯誤訊息存入快取
-                this.state.stockDataCache[symbol] = { error: data.error || '獲取資料失敗' };
-            } else {
-                // 成功獲取資料，存入快取
-                const market = symbol.endsWith('.TW') ? 'TW' : 'US';
-                const currency = market === 'TW' ? 'NT$' : '$';
-                // Alpha Vantage API 沒有直接提供 name 和 pe，這裡先用 symbol 作為 name
-                const processedData = { ...data, name: symbol, market, currency, pe: null };
-                this.state.stockDataCache[symbol] = processedData;
+    generateHistory() {
+        Object.keys(this.mockData).forEach(symbol => {
+            let price = this.mockData[symbol].price;
+            for (let i = 0; i < 30; i++) {
+                let change = (Math.random() - 0.48) * price * 0.05;
+                let open = price;
+                let close = price + change;
+                let high = Math.max(open, close) * (1 + Math.random() * 0.02);
+                let low = Math.min(open, close) * (1 - Math.random() * 0.02);
+                let volume = 10000 + Math.random() * 50000;
+                let date = new Date();
+                date.setDate(date.getDate() - (30 - i));
+                this.mockData[symbol].history.unshift({ date: date.toISOString().split('T')[0], open, high, low, close, volume });
+                price = close;
             }
-        } catch (error) {
-            // 網路或其他錯誤
-            this.state.stockDataCache[symbol] = { error: '網路請求失敗' };
-        }
-        
-        this.render(); // 再次渲染以顯示獲取的資料或錯誤訊息
-        return this.state.stockDataCache[symbol];
-    },
-
-    // 新增：一次獲取所有自選股的資料
-    async fetchAllWatchlistData(forceRefresh = false) {
-        this.state.isLoading = true;
-        this.render();
-
-        const symbolsToFetch = this.state.watchlist.filter(symbol => !this.state.stockDataCache[symbol] || forceRefresh);
-        
-        // 使用 Promise.all 同時發送所有請求
-        await Promise.all(symbolsToFetch.map(symbol => this.fetchStockData(symbol, forceRefresh)));
-
-        this.state.isLoading = false;
-        this.render();
+        });
     },
 
     setupEventListeners() {
@@ -266,7 +237,7 @@ const App = {
         this.render();
     },
 
-    async render() {
+    render() {
         this.renderHeader();
         
         document.querySelectorAll('#app > main > .view').forEach(v => v.classList.add('hidden'));
@@ -283,9 +254,9 @@ const App = {
         }
 
         if (this.state.currentView === 'watchlist') {
-            await this.renderWatchlist();
+            this.renderWatchlist();
         } else if (this.state.currentView === 'scanner') {
-            await this.renderScanner();
+            this.renderScanner();
         }
     },
     
@@ -319,34 +290,21 @@ const App = {
         }
     },
 
-    async renderWatchlist() {
-        await this.fetchAllWatchlistData();
+    renderWatchlist() {
         document.getElementById('watchlist-last-updated').textContent = `最後更新: ${this.state.lastUpdated.toLocaleTimeString('zh-TW')}`;
         const container = document.getElementById('stock-list-container');
         container.innerHTML = '';
-        
-        const filteredList = this.state.watchlist.filter(symbol => {
-            const stockData = this.state.stockDataCache[symbol];
-            return stockData && !stockData.error && stockData.market === this.state.watchlistMarketView;
-        });
+        const filteredList = this.state.watchlist.filter(symbol => this.mockData[symbol] && this.mockData[symbol].market === this.state.watchlistMarketView);
 
         if (filteredList.length === 0) {
-            container.innerHTML = `<p class="text-slate-400 text-center mt-10">此列表是空的，或資料載入中...</p>`;
+            container.innerHTML = `<p class="text-slate-400 text-center mt-10">此列表是空的，請點擊右上角「+」新增股票。</p>`;
             return;
         }
 
         filteredList.forEach(symbol => {
-            const stock = this.state.stockDataCache[symbol];
-            if (!stock || stock.isLoading) {
-                container.innerHTML += `<div class="bg-slate-800 p-4 rounded-xl shadow-sm"><div class="loader mx-auto"></div></div>`;
-                return;
-            }
-            if (stock.error) {
-                 container.innerHTML += `<div class="bg-slate-800 p-4 rounded-xl shadow-sm text-center text-red-500">${symbol}: ${stock.error}</div>`;
-                return;
-            }
-
-            const indicators = this.calculateIndicators(stock);
+            const stock = this.mockData[symbol];
+            if (!stock) return;
+            const indicators = this.calculateIndicators(symbol);
             const isUS = stock.market === 'US';
             const isUp = stock.change >= 0;
             const colorClass = isUp ? (isUS ? 'text-green-500' : 'text-red-500') : (isUS ? 'text-red-500' : 'text-green-500');
@@ -394,8 +352,7 @@ const App = {
         });
     },
 
-    async renderScanner() {
-        await this.fetchAllWatchlistData();
+    renderScanner() {
         const scannerHeaderEl = document.getElementById('scanner-header-content');
         scannerHeaderEl.innerHTML = `
             <div class="flex justify-between items-center">
@@ -420,16 +377,11 @@ const App = {
         let buyCount = 0;
         let sellCount = 0;
         
-        const filteredList = this.state.watchlist.filter(symbol => {
-            const stockData = this.state.stockDataCache[symbol];
-            return stockData && !stockData.error && stockData.market === this.state.scannerMarketView;
-        });
+        const filteredList = this.state.watchlist.filter(symbol => this.mockData[symbol] && this.mockData[symbol].market === this.state.scannerMarketView);
 
         filteredList.forEach(symbol => {
-            const stock = this.state.stockDataCache[symbol];
-            if (!stock || stock.isLoading || stock.error) return;
-
-            const indicators = this.calculateIndicators(stock);
+            const stock = this.mockData[symbol];
+            const indicators = this.calculateIndicators(symbol);
             const signals = this.getSignals(symbol, stock, indicators);
 
             if (signals.buy.reasons.length > 0) {
@@ -464,7 +416,7 @@ const App = {
         return `
             <div class="opportunity-card bg-slate-800 p-4 rounded-lg shadow-sm cursor-pointer active:bg-slate-700" data-symbol="${symbol}">
                 <div class="flex justify-between items-start mb-2">
-                    <p class="font-bold truncate pr-2">${stock.name}</p>
+                    <p class="font-bold truncate pr-2">${stock.name} <span class="text-xs text-slate-400">${symbol}</span></p>
                     <div class="text-right flex items-center flex-shrink-0">
                         <span class="font-semibold text-xs mr-2">力度</span>
                         ${strengthHTML}
@@ -481,20 +433,14 @@ const App = {
         `;
     },
 
-    async renderDetail(symbol) {
-        const detailContainer = document.getElementById('detail-content');
-        detailContainer.innerHTML = `<div class="loader mx-auto mt-10"></div>`;
-        
-        const stock = await this.fetchStockData(symbol, true);
-
-        if (!stock || stock.error) {
-            detailContainer.innerHTML = `<p class="text-red-500 text-center mt-10">${stock.error || '無法載入資料'}</p>`;
-            return;
-        }
+    renderDetail(symbol) {
+        const stock = this.mockData[symbol];
+        if (!stock) return;
         
         document.getElementById('detail-header-title').textContent = `${stock.name} (${symbol})`;
+        const container = document.getElementById('detail-content');
         
-        detailContainer.innerHTML = `
+        container.innerHTML = `
             <div class="bg-slate-800 p-4 rounded-xl shadow-md mb-4">
                 <div class="flex justify-between items-start mb-2">
                     <div>
@@ -504,7 +450,7 @@ const App = {
                     <div class="text-xs text-slate-400 text-right">
                         <p>當日高: <span class="font-semibold">${stock.high.toFixed(2)}</span></p>
                         <p>當日低: <span class="font-semibold">${stock.low.toFixed(2)}</span></p>
-                        <p>成交量: <span class="font-semibold">${stock.history[0].volume}</span></p>
+                        <p>成交量: <span class="font-semibold">${stock.history[0].volume.toFixed(0)}</span></p>
                         ${stock.pe ? `<p>本益比: <span class="font-semibold">${stock.pe}</span></p>` : ''}
                     </div>
                 </div>
@@ -519,7 +465,7 @@ const App = {
 
         this.renderDetailTabContent(symbol);
 
-        detailContainer.querySelectorAll('.detail-tab').forEach(tab => {
+        container.querySelectorAll('.detail-tab').forEach(tab => {
             tab.addEventListener('click', (e) => {
                 this.state.detailViewTab = e.currentTarget.dataset.tab;
                 this.renderDetail(symbol);
@@ -545,8 +491,7 @@ const App = {
     },
 
     getAnalysisContentHTML(symbol) {
-        const stock = this.state.stockDataCache[symbol];
-        const indicators = this.calculateIndicators(stock);
+        const indicators = this.calculateIndicators(symbol);
         return `
             <div class="bg-slate-800 p-4 rounded-xl shadow-md mb-4">
                 <h3 class="text-lg font-bold mb-3">近七日價格區間</h3>
@@ -558,7 +503,7 @@ const App = {
                     ${this.createAnalysisCard('均線', `5日: ${indicators.ma5.toFixed(2)}<br>10日: ${indicators.ma10.toFixed(2)}`)}
                     ${this.createAnalysisCard('RSI (14日)', `<span class="font-bold text-xl ${indicators.rsi > 70 ? 'text-red-500' : (indicators.rsi < 30 ? 'text-green-500' : '')}">${indicators.rsi.toFixed(2)}</span>`)}
                     ${this.createAnalysisCard('布林通道', `上軌: ${indicators.bb.upper.toFixed(2)}<br>下軌: ${indicators.bb.lower.toFixed(2)}`)}
-                    ${this.createAnalysisCard('量價關係', `5日均量比: <span class="font-bold text-xl">${(stock.history[0].volume / indicators.avgVol5).toFixed(2)}</span>`)}
+                    ${this.createAnalysisCard('量價關係', `5日均量比: <span class="font-bold text-xl">${(this.mockData[symbol].history[0].volume / indicators.avgVol5).toFixed(2)}</span>`)}
                 </div>
             </div>
             <div class="bg-slate-800 p-4 rounded-xl shadow-md">
@@ -585,7 +530,7 @@ const App = {
     },
 
     getNewsContentHTML(symbol) {
-        const stock = this.state.stockDataCache[symbol];
+        const stock = this.mockData[symbol];
         const newsItems = [
             { title: `${stock.name} 發布最新財報，營收超出預期`, source: '財經日報', time: '2小時前' },
             { title: `分析師看好 ${stock.name} 未來發展，上調目標價`, source: '股市前線', time: '8小時前' },
@@ -612,9 +557,7 @@ const App = {
     },
     
     render7DayPriceVisual(symbol) {
-        const history = this.state.stockDataCache[symbol].history;
-        if (!history || history.length === 0) return '';
-        const last7Days = history.slice(0, 7);
+        const last7Days = this.mockData[symbol].history.slice(0, 7);
         const allLows = last7Days.map(d => d.low);
         const allHighs = last7Days.map(d => d.high);
         const minPrice = Math.min(...allLows);
@@ -649,7 +592,7 @@ const App = {
         if (this.state.advancedChartInstance) {
             this.state.advancedChartInstance.destroy();
         }
-        const history = this.state.stockDataCache[symbol].history.slice(0, 30).reverse();
+        const history = this.mockData[symbol].history.slice(0, 30).reverse();
         const ctx = document.getElementById('advanced-chart').getContext('2d');
         
         const data = history.map(d => ({
@@ -759,7 +702,7 @@ const App = {
         }
     },
 
-    async addStockFromInput() {
+    addStockFromInput() {
         const inputEl = document.getElementById('add-stock-input');
         const feedbackEl = document.getElementById('add-stock-feedback');
         let symbol = inputEl.value.trim().toUpperCase();
@@ -774,31 +717,42 @@ const App = {
             symbol += suffix;
         }
 
+        if (!this.mockData[symbol]) {
+            feedbackEl.textContent = '找不到此股票代號。';
+            return;
+        }
+
         if (this.state.watchlist.includes(symbol)) {
             feedbackEl.textContent = '此股票已在自選清單中。';
             return;
         }
-        
-        const stockData = await this.fetchStockData(symbol, true);
-        if (stockData.error) {
-            feedbackEl.textContent = `新增失敗: ${stockData.error}`;
-            delete this.state.stockDataCache[symbol];
-        } else {
-            this.state.watchlist.unshift(symbol);
-            this.render();
-            this.toggleModal(false);
-        }
+
+        this.state.watchlist.unshift(symbol);
+        this.render();
+        this.toggleModal(false);
     },
 
     removeStock(symbol) {
         this.state.watchlist = this.state.watchlist.filter(s => s !== symbol);
-        delete this.state.stockDataCache[symbol];
         this.render();
     },
 
-    calculateIndicators(stockData) {
-        const history = stockData.history;
-        if (!history || history.length < 20) return { ma3: 0, ma5: 0, ma10: 0, ma20: 0, rsi: 50, bb: { upper: 0, middle: 0, lower: 0 }, high30: 0, low30: 0, avgVol5: 0 };
+    simulatePriceUpdate() {
+        Object.keys(this.mockData).forEach(symbol => {
+            const stock = this.mockData[symbol];
+            const change = (Math.random() - 0.5) * stock.price * 0.01;
+            const newPrice = stock.price + change;
+            stock.price = newPrice > 0 ? newPrice : stock.price;
+            stock.change += change;
+            stock.changePercent = (stock.change / (stock.price - stock.change)) * 100;
+            stock.high = Math.max(stock.high, stock.price);
+            stock.low = Math.min(stock.low, stock.price);
+        });
+    },
+
+    calculateIndicators(symbol) {
+        const history = this.mockData[symbol].history;
+        if (history.length < 20) return { ma3: 0, ma5: 0, ma10: 0, ma20: 0, rsi: 50, bb: { upper: 0, middle: 0, lower: 0 }, high30: 0, low30: 0, avgVol5: 0 };
         const closes = history.map(d => d.close);
         const highs = history.map(d => d.high);
         const lows = history.map(d => d.low);
@@ -844,8 +798,8 @@ const App = {
         analysisBtn.disabled = true;
         analysisBtn.innerHTML = '分析中...';
         resultContainer.innerHTML = '<div class="loader"></div>';
-        const stock = this.state.stockDataCache[symbol];
-        const indicators = this.calculateIndicators(stock);
+        const stock = this.mockData[symbol];
+        const indicators = this.calculateIndicators(symbol);
         const prompt = `You are a helpful financial analyst assistant for retail investors in Taiwan. Your tone should be neutral, informative, and easy to understand, avoiding hype or definitive financial advice. Based on the following real-time technical data for the stock, provide a brief analysis in Traditional Chinese, formatted in Markdown. Follow this structure: 1. Start with a one-sentence summary in bold. 2. Then, explain the key indicators in a bulleted list. 3. Conclude with the mandatory disclaimer: "此分析僅供參考，不構成任何投資建議。" Data: - Stock Name: ${stock.name} - Current Price: ${stock.price.toFixed(2)} ${stock.currency} - RSI (14D): ${indicators.rsi.toFixed(2)} - Price vs Bollinger Bands (20D): The price is ${stock.price > indicators.bb.upper ? 'above the upper band' : stock.price < indicators.bb.lower ? 'below the lower band' : 'within the bands'}. - Price vs Moving Averages: The price is ${stock.price > indicators.ma20 ? 'above' : 'below'} the 20-day moving average. - Volume Ratio (vs 5D Avg): ${(stock.history[0].volume / indicators.avgVol5).toFixed(2)}x Please provide the analysis.`;
         try {
             const apiKey = ""; 
