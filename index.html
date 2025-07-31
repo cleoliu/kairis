@@ -209,21 +209,33 @@ const App = {
         this.state.lastUpdated = new Date();
     },
 
-    async fetchStockData(symbol) {
+    async fetchStockData(symbol, forceRefresh = false) {
+        if (this.state.stockDataCache[symbol] && !this.state.stockDataCache[symbol].error && !forceRefresh) {
+            return this.state.stockDataCache[symbol];
+        }
+        
+        this.state.stockDataCache[symbol] = { isLoading: true };
+
         try {
             const response = await fetch(`/api/get-stock-data?symbol=${symbol}`);
             const data = await response.json();
 
             if (!response.ok) {
-                return { error: data.error || '獲取資料失敗' };
+                const errorData = { error: data.error || '獲取資料失敗' };
+                this.state.stockDataCache[symbol] = errorData;
+                return errorData;
             }
             
             const market = symbol.endsWith('.TW') ? 'TW' : 'US';
             const currency = market === 'TW' ? 'NT$' : '$';
-            return { ...data, name: data.name || symbol, market, currency, pe: data.pe || null };
+            const processedData = { ...data, name: data.name || symbol, market, currency, pe: data.pe || null };
+            this.state.stockDataCache[symbol] = processedData;
+            return processedData;
 
         } catch (error) {
-            return { error: '網路請求失敗' };
+            const errorData = { error: '網路請求失敗' };
+            this.state.stockDataCache[symbol] = errorData;
+            return errorData;
         }
     },
 
@@ -233,10 +245,7 @@ const App = {
 
         const symbolsToFetch = this.state.watchlist.filter(symbol => !this.state.stockDataCache[symbol] || forceRefresh);
         
-        const promises = symbolsToFetch.map(async (symbol) => {
-            const data = await this.fetchStockData(symbol);
-            this.state.stockDataCache[symbol] = data;
-        });
+        const promises = symbolsToFetch.map(symbol => this.fetchStockData(symbol, forceRefresh));
 
         await Promise.all(promises);
 
@@ -765,6 +774,7 @@ const App = {
     async addStockFromInput() {
         const inputEl = document.getElementById('add-stock-input');
         const feedbackEl = document.getElementById('add-stock-feedback');
+        const addButton = document.getElementById('modal-add-btn');
         let symbol = inputEl.value.trim().toUpperCase();
 
         if (!symbol) {
@@ -782,7 +792,12 @@ const App = {
             return;
         }
         
+        addButton.disabled = true;
+        addButton.textContent = '新增中...';
+        feedbackEl.textContent = '';
+
         const stockData = await this.fetchStockData(symbol, true);
+        
         if (stockData.error) {
             feedbackEl.textContent = `新增失敗: ${stockData.error}`;
             delete this.state.stockDataCache[symbol];
@@ -791,6 +806,9 @@ const App = {
             this.render();
             this.toggleModal(false);
         }
+
+        addButton.disabled = false;
+        addButton.textContent = '新增';
     },
 
     removeStock(symbol) {
