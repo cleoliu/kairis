@@ -167,6 +167,7 @@
 
 
 <script>
+// *** START: Firebase Integration ***
 const firebaseConfig = {
     apiKey: "AIzaSyD-L_CZh3q-wyFllu9ufjetNMCetR-7e9s",
     authDomain: "stockwise-ad5e9.firebaseapp.com",
@@ -182,7 +183,9 @@ const App = {
         currentView: 'watchlist',
         watchlistMarketView: 'TW',
         scannerMarketView: 'TW',
-        watchlist: [], // 改為從 Firebase 或 LocalStorage 讀取
+        watchlistMarketView: 'US', // 改為美股優先
+        scannerMarketView: 'US',   // 改為美股優先
+        watchlist: [], 
         selectedStock: null,
         detailViewTab: 'analysis',
         previousView: 'watchlist',
@@ -191,17 +194,16 @@ const App = {
         advancedChartInstance: null,
         stockDataCache: {},
         isLoading: false,
-        // Firebase 相關 state
         db: null,
         auth: null,
         userId: null,
-        watchlistUnsubscribe: null, // 用來取消監聽
+        watchlistUnsubscribe: null,
     },
 
     async init() {
         this.setupEventListeners();
         this.updateTime();
-        await this.initFirebase(); // 初始化 Firebase
+        await this.initFirebase();
         setInterval(() => {
             this.updateTime();
             if(this.state.currentView !== 'detail') {
@@ -210,11 +212,9 @@ const App = {
         }, 60000);
     },
 
-    // *** START: Firebase Integration FIX ***
     async initFirebase() {
-        // 檢查 firebaseConfig 是否為 placeholder
         if (firebaseConfig.apiKey === "YOUR_API_KEY") {
-            console.warn("Firebase 未設定，自選股清單將儲存在本機瀏覽器中。若要啟用雲端同步，請在 index.html 中填入您的 firebaseConfig。");
+            console.warn("Firebase 未設定，自選股清單將儲存在本機瀏覽器中。");
             this.loadWatchlistFromLocalStorage();
             return;
         }
@@ -231,14 +231,12 @@ const App = {
                 } else {
                     this.state.auth.signInAnonymously().catch(error => {
                         console.error("匿名登入失敗:", error);
-                        // 登入失敗時，降級為本機儲存
                         this.loadWatchlistFromLocalStorage();
                     });
                 }
             });
         } catch (error) {
             console.error("Firebase 初始化失敗:", error);
-            // 初始化失敗時，降級為本機儲存
             this.loadWatchlistFromLocalStorage();
         }
     },
@@ -256,7 +254,7 @@ const App = {
                 const data = doc.data();
                 this.state.watchlist = Array.isArray(data.watchlist) ? data.watchlist : [];
             } else {
-                this.state.watchlist = ['2330.TW', 'AAPL.US']; // 預設值
+                this.state.watchlist = ['AAPL.US', '2330.TW']; // 預設值
                 docRef.set({ watchlist: this.state.watchlist });
             }
             this.fetchAllWatchlistData();
@@ -267,14 +265,13 @@ const App = {
     
     loadWatchlistFromLocalStorage() {
         const saved = localStorage.getItem('stockwise_watchlist');
-        this.state.watchlist = saved ? JSON.parse(saved) : ['2330.TW', 'AAPL.US']; // 預設值
+        this.state.watchlist = saved ? JSON.parse(saved) : ['AAPL.US', '2330.TW']; // 預設值
         this.fetchAllWatchlistData();
     },
 
     saveWatchlistToLocalStorage() {
         localStorage.setItem('stockwise_watchlist', JSON.stringify(this.state.watchlist));
     },
-    // *** END: Firebase Integration FIX ***
 
     updateTime() {
         this.state.lastUpdated = new Date();
@@ -370,8 +367,8 @@ const App = {
             content = `
                 <div class="flex justify-between items-center">
                     <div class="flex bg-slate-700 rounded-lg p-1">
-                        <button data-market="TW" class="market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.watchlistMarketView === 'TW' ? 'bg-slate-800 shadow' : ''}">台股</button>
                         <button data-market="US" class="market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.watchlistMarketView === 'US' ? 'bg-slate-800 shadow' : ''}">美股</button>
+                        <button data-market="TW" class="market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.watchlistMarketView === 'TW' ? 'bg-slate-800 shadow' : ''}">台股</button>
                     </div>
                     <button id="add-stock-btn" class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-3 rounded-lg transition-colors text-lg">+</button>
                 </div>
@@ -402,10 +399,12 @@ const App = {
         }
 
         container.innerHTML = '';
-        const filteredList = this.state.watchlist.filter(symbol => {
-            const stockData = this.state.stockDataCache[symbol];
-            return stockData && stockData.market === this.state.watchlistMarketView;
-        });
+        const filteredList = this.state.watchlist
+            .filter(symbol => {
+                const stockData = this.state.stockDataCache[symbol];
+                return stockData && stockData.market === this.state.watchlistMarketView;
+            })
+            .sort((a, b) => a.localeCompare(b)); // 依照字母/編號排序
 
         if (filteredList.length === 0) {
             container.innerHTML = `<p class="text-slate-400 text-center mt-10">此列表是空的，請點擊右上角「+」新增股票。</p>`;
@@ -476,8 +475,8 @@ const App = {
         scannerHeaderEl.innerHTML = `
             <div class="flex justify-between items-center">
                 <div class="flex bg-slate-700 rounded-lg p-1">
-                    <button data-market="TW" class="scanner-market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.scannerMarketView === 'TW' ? 'bg-slate-800 shadow' : ''}">台股</button>
                     <button data-market="US" class="scanner-market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.scannerMarketView === 'US' ? 'bg-slate-800 shadow' : ''}">美股</button>
+                    <button data-market="TW" class="scanner-market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.scannerMarketView === 'TW' ? 'bg-slate-800 shadow' : ''}">台股</button>
                 </div>
                 <p class="text-xs text-slate-500">${`最後更新: ${this.state.lastUpdated.toLocaleTimeString('zh-TW')}`}</p>
             </div>
@@ -498,10 +497,8 @@ const App = {
             return;
         }
 
-        buyContainer.innerHTML = '';
-        sellContainer.innerHTML = '';
-        let buyCount = 0;
-        let sellCount = 0;
+        let buyOpportunities = [];
+        let sellOpportunities = [];
         
         const filteredList = this.state.watchlist.filter(symbol => {
             const stockData = this.state.stockDataCache[symbol];
@@ -516,17 +513,19 @@ const App = {
             const signals = this.getSignals(symbol, stock, indicators);
 
             if (signals.buy.reasons.length > 0) {
-                buyCount++;
-                buyContainer.innerHTML += this.createOpportunityCard(symbol, stock, signals.buy);
+                buyOpportunities.push({ symbol, stock, signalData: signals.buy });
             }
             if (signals.sell.reasons.length > 0) {
-                sellCount++;
-                sellContainer.innerHTML += this.createOpportunityCard(symbol, stock, signals.sell);
+                sellOpportunities.push({ symbol, stock, signalData: signals.sell });
             }
         });
-        
-        if(buyCount === 0) buyContainer.innerHTML = `<p class="text-slate-400 text-center p-4">暫無符合條件的買進機會。</p>`;
-        if(sellCount === 0) sellContainer.innerHTML = `<p class="text-slate-400 text-center p-4">暫無符合條件的賣出機會。</p>`;
+
+        // 依照力度排序
+        buyOpportunities.sort((a, b) => b.signalData.score - a.signalData.score);
+        sellOpportunities.sort((a, b) => b.signalData.score - a.signalData.score);
+
+        buyContainer.innerHTML = buyOpportunities.length > 0 ? buyOpportunities.map(op => this.createOpportunityCard(op.symbol, op.stock, op.signalData)).join('') : `<p class="text-slate-400 text-center p-4">暫無符合條件的買進機會。</p>`;
+        sellContainer.innerHTML = sellOpportunities.length > 0 ? sellOpportunities.map(op => this.createOpportunityCard(op.symbol, op.stock, op.signalData)).join('') : `<p class="text-slate-400 text-center p-4">暫無符合條件的賣出機會。</p>`;
 
         document.querySelectorAll('.opportunity-card').forEach(card => {
             card.addEventListener('click', () => this.selectStock(card.dataset.symbol));
