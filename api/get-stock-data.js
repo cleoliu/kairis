@@ -23,13 +23,16 @@ async function handleGetStockData(request, response) {
       return response.status(400).json({ error: '必須提供股票代號' });
     }
 
+    // *** FIX: Alpha Vantage uses the ticker without the .US suffix for US stocks. ***
+    const apiSymbol = symbol.endsWith('.US') ? symbol.replace('.US', '') : symbol;
+
     const alphaVantageApiKey = process.env.ALPHA_VANTAGE_API_KEY;
     if (!alphaVantageApiKey) {
       return response.status(500).json({ error: 'ALPHA_VANTAGE_API_KEY 未設定' });
     }
 
-    const quoteUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${alphaVantageApiKey}`;
-    const historyUrl = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&apikey=${alphaVantageApiKey}`;
+    const quoteUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${apiSymbol}&apikey=${alphaVantageApiKey}`;
+    const historyUrl = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${apiSymbol}&apikey=${alphaVantageApiKey}`;
 
     const [quoteResponse, historyResponse] = await Promise.all([
       fetch(quoteUrl),
