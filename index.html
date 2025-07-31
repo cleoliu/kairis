@@ -265,7 +265,7 @@ const App = {
     
     loadWatchlistFromLocalStorage() {
         const saved = localStorage.getItem('stockwise_watchlist');
-        this.state.watchlist = saved ? JSON.parse(saved) : ['AAPL.US', '2330.TW']; // 預設值
+        this.state.watchlist = saved ? JSON.parse(saved) : ['AAPL.US', '2330.TW'];
         this.fetchAllWatchlistData();
     },
 
@@ -393,7 +393,7 @@ const App = {
         document.getElementById('watchlist-last-updated').textContent = `最後更新: ${this.state.lastUpdated.toLocaleTimeString('zh-TW')}`;
         const container = document.getElementById('stock-list-container');
         
-        if (this.state.isLoading && Object.keys(this.state.stockDataCache).length === 0) {
+        if (this.state.isLoading && this.state.watchlist.length > 0) {
             container.innerHTML = `<div class="loader mx-auto mt-10"></div>`;
             return;
         }
@@ -401,10 +401,11 @@ const App = {
         container.innerHTML = '';
         const filteredList = this.state.watchlist
             .filter(symbol => {
-                const stockData = this.state.stockDataCache[symbol];
-                return stockData && stockData.market === this.state.watchlistMarketView;
+                // *** FIX: Check if symbol suffix matches the market view ***
+                const market = symbol.endsWith('.TW') ? 'TW' : 'US';
+                return market === this.state.watchlistMarketView;
             })
-            .sort((a, b) => a.localeCompare(b)); // 依照字母/編號排序
+            .sort((a, b) => a.localeCompare(b));
 
         if (filteredList.length === 0) {
             container.innerHTML = `<p class="text-slate-400 text-center mt-10">此列表是空的，請點擊右上角「+」新增股票。</p>`;
@@ -520,7 +521,6 @@ const App = {
             }
         });
 
-        // 依照力度排序
         buyOpportunities.sort((a, b) => b.signalData.score - a.signalData.score);
         sellOpportunities.sort((a, b) => b.signalData.score - a.signalData.score);
 
