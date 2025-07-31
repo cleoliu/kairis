@@ -1,890 +1,125 @@
-<!DOCTYPE html>
-<html lang="zh-Hant" class="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>智慧選股雷達 (深色版)</title>
-    <!-- Chosen Palette: Warm Neutrals (Slate & Sky) - Dark Mode -->
-    <!-- Application Structure Plan: A mobile-first SPA with a fixed bottom tab bar for primary navigation between "Watchlist" and "Scanner". The "Detail" view is now a separate, full-screen view that appears on top of the current view, with a dedicated back button, which is a standard mobile UI pattern. The watchlist itself is now sub-tabbed for "TW" and "US" markets. This architecture prioritizes mobile ergonomics, one-handed operation, and clear information separation. -->
-    <!-- Visualization & Content Choices: 
-        - [Stock List]: Goal: Inform/Compare. Method: A single-column list of cards. Now includes key indicators (High, Low, MAs) with a conditional star '★' to indicate when price is below a MA. Interaction: Click to navigate to detail view. Justification: The star provides an immediate visual cue for potential weakness.
-        - [Detail Page Tabs]: Goal: Organize. Method: A new sub-tab navigation for Analysis, Chart, and News. Justification: Organizes a growing amount of information on the detail page into logical sections, preventing cognitive overload.
-        - [Advanced Chart]: Goal: Analyze Change. Method: Upgraded to a Chart.js Candlestick chart using a financial plugin, showing 30-day OHLC data. Interaction: Hover/touch for tooltips with full OHLC info. Justification: Fulfills user request for a more professional K-line chart.
-        - [News Feed]: Goal: Inform. Method: A list of mock news articles. Justification: Adds a qualitative, event-driven context to the quantitative data.
-        - [7-Day Price Visual]: Goal: Analyze Change/Compare. Method: Custom HTML/CSS visualization. Displays the full high-low range as text. Interaction: Static display. Justification: Implements user's visual preference.
-        - [Scanner]: Goal: Organize/Discover. Method: Single-column list of cards. Now tabbed by market (TW/US). Layout adjusted to prioritize price info over the reason. Interaction: Click to navigate to detail view. Justification: Aligns with user workflow of seeing price first and filtering by market.
-        - [Add Stock]: Goal: Input. Method: Text input now intelligently appends market suffix based on the active tab. Interaction: User types symbol and clicks add. Justification: A significant usability improvement.
-        - [Theme]: The app is now set to a permanent dark theme.
-        - [Last Updated]: Goal: Inform. Method: A simple text element on each main view. Interaction: Static. Justification: Provides crucial context on data freshness.
-        - [Gemini Analysis]: Goal: Synthesize/Explain. Method: Button-triggered text block. Interaction: Click to generate analysis.
-        - Library/Method: Vanilla JS for all logic, Gemini API for AI analysis, Chart.js with chartjs-chart-financial plugin for advanced chart.
-    -->
-    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.1.1/dist/chartjs-chart-financial.min.js"></script>
-    <style>
-        body {
-            -webkit-tap-highlight-color: transparent;
-        }
-        .app-container {
-            max-width: 440px; /* Common width for mobile previews */
-            margin: 0 auto;
-            min-height: 100vh;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
-            padding-bottom: 80px; /* Space for bottom nav */
-        }
-        .strength-dot {
-            height: 10px;
-            width: 10px;
-            border-radius: 50%;
-            display: inline-block;
-            margin-right: 4px;
-        }
-        .loader {
-            width: 40px;
-            height: 40px;
-            border: 5px solid #475569; /* slate-600 */
-            border-bottom-color: #0ea5e9; /* sky-500 */
-            border-radius: 50%;
-            display: inline-block;
-            box-sizing: border-box;
-            animation: rotation 1s linear infinite;
-            margin: 20px auto;
-        }
-        @keyframes rotation {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .price-range-bar-bg {
-            height: 20px;
-            border-radius: 4px;
-            position: relative;
-            overflow: hidden;
-        }
-        .price-range-bar-fg {
-            height: 100%;
-            position: absolute;
-        }
-        .price-range-bar-tick {
-            width: 2px;
-            height: 100%;
-            position: absolute;
-        }
-        .ma-star {
-            color: #f59e0b; /* amber-500 */
-            font-weight: bold;
-        }
-        .advanced-chart-container {
-            position: relative;
-            width: 100%;
-            height: 300px;
-        }
-    </style>
-</head>
-<body class="bg-black text-slate-200 font-sans transition-colors duration-300">
-
-    <div id="app" class="app-container bg-slate-900">
-        
-        <header id="main-header" class="bg-slate-800 sticky top-0 z-10 p-4 border-b border-slate-700">
-             <!-- Header content is injected by JS -->
-        </header>
-
-        <main class="p-4">
-            <!-- Watchlist View -->
-            <div id="view-watchlist" class="view">
-                <p id="watchlist-last-updated" class="text-xs text-slate-500 text-right mb-2"></p>
-                <div id="stock-list-container" class="space-y-3">
-                    <!-- Stock cards will be injected here -->
-                </div>
-            </div>
-
-            <!-- Scanner View -->
-            <div id="view-scanner" class="view hidden">
-                 <div id="scanner-header-content" class="mb-4">
-                    <!-- Scanner sub-tabs and last updated time injected here -->
-                 </div>
-                <p class="text-sm text-slate-400">本頁面會自動掃描您自選列表中的所有股票，並根據預設的技術指標，篩選出符合特定條件的潛在買賣機會。</p>
-                <div class="space-y-6 mt-4">
-                    <div>
-                        <h3 class="text-lg font-semibold text-green-500 mb-2">潛在買進機會</h3>
-                        <div id="buy-opportunities" class="space-y-3">
-                            <!-- Buy opportunity cards will be injected here -->
-                        </div>
-                    </div>
-                    <div>
-                        <h3 class="text-lg font-semibold text-red-500 mb-2">潛在賣出機會</h3>
-                        <div id="sell-opportunities" class="space-y-3">
-                            <!-- Sell opportunity cards will be injected here -->
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </main>
-    </div>
-
-    <!-- Detail View - Now acts as a full-page overlay -->
-    <div id="view-detail" class="fixed inset-0 bg-slate-900 z-20 hidden transform translate-x-full transition-transform duration-300 app-container">
-        <header class="bg-slate-800 sticky top-0 z-10 p-4 border-b border-slate-700 flex items-center">
-            <button id="back-btn" class="text-sky-500 text-2xl mr-4 w-8 h-8 flex items-center justify-center active:bg-slate-700 rounded-full">‹</button>
-            <h2 id="detail-header-title" class="text-lg font-bold truncate">個股詳情</h2>
-        </header>
-        <div id="detail-content-wrapper" class="overflow-y-auto h-[calc(100vh-65px)]">
-             <div id="detail-content">
-                <!-- Detail content will be injected here -->
-            </div>
-        </div>
-    </div>
-
-    <!-- Bottom Navigation -->
-    <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-800 border-t border-slate-700 flex justify-around h-16 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
-        <button data-view="watchlist" class="bottom-nav-tab flex flex-col items-center justify-center text-sky-500 w-full active:bg-slate-700 transition-colors">
-            <span class="text-sm font-semibold">自選列表</span>
-        </button>
-        <button data-view="scanner" class="bottom-nav-tab flex flex-col items-center justify-center text-slate-400 w-full active:bg-slate-700 transition-colors">
-            <span class="text-sm font-semibold">機會掃描</span>
-        </button>
-    </nav>
-
-    <!-- Add Stock Modal -->
-    <div id="add-stock-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 p-4">
-        <div class="bg-slate-800 rounded-lg p-6 w-full max-w-sm">
-            <h3 class="text-xl font-bold mb-4">新增股票</h3>
-            <p id="add-stock-prompt" class="text-slate-400 mb-2"></p>
-            <input type="text" id="add-stock-input" class="w-full border border-slate-600 rounded-md p-2 bg-slate-700" placeholder="輸入代號...">
-            <p id="add-stock-feedback" class="text-xs text-red-500 mt-1 h-4"></p>
-            <div class="flex gap-2 mt-4">
-                 <button id="modal-add-btn" class="flex-1 bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-4 rounded-lg">新增</button>
-                 <button id="close-modal-btn" class="flex-1 bg-slate-600 hover:bg-slate-500 text-slate-200 font-bold py-2 px-4 rounded-lg">取消</button>
-            </div>
-        </div>
-    </div>
-
-
-<script>
-const App = {
-    state: {
-        currentView: 'watchlist',
-        watchlistMarketView: 'TW',
-        scannerMarketView: 'TW',
-        watchlist: ['2330.TW', '0050.TW', 'AAPL.US', 'NVDA.US'],
-        selectedStock: null,
-        detailViewTab: 'analysis',
-        previousView: 'watchlist',
-        isGeminiLoading: false,
-        lastUpdated: null,
-        advancedChartInstance: null,
-        stockDataCache: {},
-        isLoading: false,
-    },
-
-    init() {
-        this.setupEventListeners();
-        this.updateTime();
-        this.fetchAllWatchlistData(); // Initial data fetch
-        setInterval(() => {
-            this.updateTime();
-            if(this.state.currentView !== 'detail') {
-                this.fetchAllWatchlistData(true);
-            }
-        }, 60000);
-    },
-
-    updateTime() {
-        this.state.lastUpdated = new Date();
-    },
-
-    async fetchStockData(symbol) {
-        try {
-            // 修改：呼叫後端 API
-            const response = await fetch(`/api/get-stock-data?symbol=${symbol}`);
-            const data = await response.json();
-
-            if (!response.ok) {
-                return { error: data.error || '獲取資料失敗' };
-            }
-            
-            const market = symbol.endsWith('.TW') ? 'TW' : 'US';
-            const currency = market === 'TW' ? 'NT$' : '$';
-            // Alpha Vantage API doesn't provide name, so we use the symbol as a fallback
-            return { ...data, name: data.name || symbol, market, currency, pe: data.pe || null };
-
-        } catch (error) {
-            return { error: '網路請求失敗' };
-        }
-    },
-
-    async fetchAllWatchlistData(forceRefresh = false) {
-        this.state.isLoading = true;
-        this.render();
-
-        const symbolsToFetch = this.state.watchlist.filter(symbol => !this.state.stockDataCache[symbol] || forceRefresh);
-        
-        const promises = symbolsToFetch.map(async (symbol) => {
-            const data = await this.fetchStockData(symbol);
-            this.state.stockDataCache[symbol] = data;
-        });
-
-        await Promise.all(promises);
-
-        this.state.isLoading = false;
-        this.render();
-    },
-
-    setupEventListeners() {
-        document.querySelectorAll('.bottom-nav-tab').forEach(tab => {
-            tab.addEventListener('click', (e) => this.navigate(e.currentTarget.dataset.view));
-        });
-        document.getElementById('back-btn').addEventListener('click', () => this.closeDetailView());
-        document.getElementById('close-modal-btn').addEventListener('click', () => this.toggleModal(false));
-        document.getElementById('modal-add-btn').addEventListener('click', () => this.addStockFromInput());
-    },
-
-    navigate(view) {
-        if (!view) return;
-        this.state.currentView = view;
-        this.render();
-    },
-
-    render() {
-        this.renderHeader();
-        
-        document.querySelectorAll('#app > main > .view').forEach(v => v.classList.add('hidden'));
-        document.getElementById(`view-${this.state.currentView}`).classList.remove('hidden');
-
-        document.querySelectorAll('.bottom-nav-tab').forEach(tab => {
-            tab.classList.remove('text-sky-500');
-            tab.classList.add('text-slate-400');
-        });
-        const activeTab = document.querySelector(`.bottom-nav-tab[data-view="${this.state.currentView}"]`);
-        if (activeTab) {
-            activeTab.classList.add('text-sky-500');
-            activeTab.classList.remove('text-slate-400');
-        }
-
-        if (this.state.currentView === 'watchlist') {
-            this.renderWatchlist();
-        } else if (this.state.currentView === 'scanner') {
-            this.renderScanner();
-        }
-    },
-    
-    renderHeader() {
-        const header = document.getElementById('main-header');
-        let content = '';
-
-        if (this.state.currentView === 'watchlist') {
-            content = `
-                <div class="flex justify-between items-center">
-                    <div class="flex bg-slate-700 rounded-lg p-1">
-                        <button data-market="TW" class="market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.watchlistMarketView === 'TW' ? 'bg-slate-800 shadow' : ''}">台股</button>
-                        <button data-market="US" class="market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.watchlistMarketView === 'US' ? 'bg-slate-800 shadow' : ''}">美股</button>
-                    </div>
-                    <button id="add-stock-btn" class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-3 rounded-lg transition-colors text-lg">+</button>
-                </div>
-            `;
-        } else if (this.state.currentView === 'scanner') {
-            content = `<h2 class="text-xl font-bold text-center flex-1">機會掃描</h2>`;
-        }
-        header.innerHTML = content;
-
-        if (this.state.currentView === 'watchlist') {
-            document.getElementById('add-stock-btn').addEventListener('click', () => this.toggleModal(true));
-            document.querySelectorAll('.market-tab').forEach(tab => {
-                tab.addEventListener('click', (e) => {
-                    this.state.watchlistMarketView = e.currentTarget.dataset.market;
-                    this.render();
-                });
-            });
-        }
-    },
-
-    renderWatchlist() {
-        document.getElementById('watchlist-last-updated').textContent = `最後更新: ${this.state.lastUpdated.toLocaleTimeString('zh-TW')}`;
-        const container = document.getElementById('stock-list-container');
-        
-        if (this.state.isLoading && Object.keys(this.state.stockDataCache).length === 0) {
-            container.innerHTML = `<div class="loader mx-auto mt-10"></div>`;
-            return;
-        }
-
-        container.innerHTML = '';
-        const filteredList = this.state.watchlist.filter(symbol => {
-            const stockData = this.state.stockDataCache[symbol];
-            return stockData && stockData.market === this.state.watchlistMarketView;
-        });
-
-        if (filteredList.length === 0) {
-            container.innerHTML = `<p class="text-slate-400 text-center mt-10">此列表是空的，請點擊右上角「+」新增股票。</p>`;
-            return;
-        }
-
-        filteredList.forEach(symbol => {
-            const stock = this.state.stockDataCache[symbol];
-            if (!stock || stock.isLoading) {
-                container.innerHTML += `<div class="bg-slate-800 p-4 rounded-xl shadow-sm h-[136px] flex items-center justify-center"><div class="loader"></div></div>`;
-                return;
-            }
-            if (stock.error) {
-                 container.innerHTML += `<div class="bg-slate-800 p-4 rounded-xl shadow-sm text-center text-red-500">${symbol}: ${stock.error}</div>`;
-                return;
-            }
-
-            const indicators = this.calculateIndicators(stock);
-            const isUS = stock.market === 'US';
-            const isUp = stock.change >= 0;
-            const colorClass = isUp ? (isUS ? 'text-green-500' : 'text-red-500') : (isUS ? 'text-red-500' : 'text-green-500');
-            
-            const card = `
-                <div class="bg-slate-800 p-4 rounded-xl shadow-sm cursor-pointer active:bg-slate-700" data-symbol="${symbol}">
-                    <div class="flex justify-between items-center">
-                        <div class="flex-1">
-                            <p class="font-bold text-base">${stock.name}</p>
-                            <p class="text-xs text-slate-400">${symbol}</p>
-                        </div>
-                        <div class="text-right">
-                            <p class="text-lg font-bold ${colorClass}">${stock.currency}${stock.price.toFixed(2)}</p>
-                            <p class="text-sm ${colorClass}">${isUp ? '▲' : '▼'} ${stock.change.toFixed(2)} (${stock.changePercent.toFixed(2)}%)</p>
-                        </div>
-                        <button class="remove-stock-btn text-slate-600 hover:text-red-500 text-2xl ml-3 w-8 h-8 flex items-center justify-center">×</button>
-                    </div>
-                    <div class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-700">
-                        <div class="flex justify-between">
-                            <span>高: <span class="text-red-500">${stock.high.toFixed(2)}</span></span>
-                            <span>低: <span class="text-green-500">${stock.low.toFixed(2)}</span></span>
-                        </div>
-                        <div class="flex justify-between mt-1">
-                            <span>3日線: ${indicators.ma3.toFixed(2)}${stock.price < indicators.ma3 ? '<span class="ma-star"> ★</span>' : ''}</span>
-                            <span>5日線: ${indicators.ma5.toFixed(2)}${stock.price < indicators.ma5 ? '<span class="ma-star"> ★</span>' : ''}</span>
-                            <span>10日線: ${indicators.ma10.toFixed(2)}${stock.price < indicators.ma10 ? '<span class="ma-star"> ★</span>' : ''}</span>
-                        </div>
-                    </div>
-                </div>
-            `;
-            container.innerHTML += card;
-        });
-
-        document.querySelectorAll('#stock-list-container [data-symbol]').forEach(card => {
-            card.addEventListener('click', (e) => {
-                if (e.target.classList.contains('remove-stock-btn')) return;
-                this.selectStock(card.dataset.symbol);
-            });
-        });
-        document.querySelectorAll('.remove-stock-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.removeStock(btn.dataset.symbol);
-            });
-        });
-    },
-
-    renderScanner() {
-        const scannerHeaderEl = document.getElementById('scanner-header-content');
-        scannerHeaderEl.innerHTML = `
-            <div class="flex justify-between items-center">
-                <div class="flex bg-slate-700 rounded-lg p-1">
-                    <button data-market="TW" class="scanner-market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.scannerMarketView === 'TW' ? 'bg-slate-800 shadow' : ''}">台股</button>
-                    <button data-market="US" class="scanner-market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.scannerMarketView === 'US' ? 'bg-slate-800 shadow' : ''}">美股</button>
-                </div>
-                <p class="text-xs text-slate-500">${`最後更新: ${this.state.lastUpdated.toLocaleTimeString('zh-TW')}`}</p>
-            </div>
-        `;
-        scannerHeaderEl.querySelectorAll('.scanner-market-tab').forEach(tab => {
-            tab.addEventListener('click', (e) => {
-                this.state.scannerMarketView = e.currentTarget.dataset.market;
-                this.render();
-            });
-        });
-
-        const buyContainer = document.getElementById('buy-opportunities');
-        const sellContainer = document.getElementById('sell-opportunities');
-        
-        if (this.state.isLoading) {
-            buyContainer.innerHTML = `<div class="loader mx-auto"></div>`;
-            sellContainer.innerHTML = '';
-            return;
-        }
-
-        buyContainer.innerHTML = '';
-        sellContainer.innerHTML = '';
-        let buyCount = 0;
-        let sellCount = 0;
-        
-        const filteredList = this.state.watchlist.filter(symbol => {
-            const stockData = this.state.stockDataCache[symbol];
-            return stockData && !stockData.error && stockData.market === this.state.scannerMarketView;
-        });
-
-        filteredList.forEach(symbol => {
-            const stock = this.state.stockDataCache[symbol];
-            if (!stock || stock.isLoading || stock.error) return;
-
-            const indicators = this.calculateIndicators(stock);
-            const signals = this.getSignals(symbol, stock, indicators);
-
-            if (signals.buy.reasons.length > 0) {
-                buyCount++;
-                buyContainer.innerHTML += this.createOpportunityCard(symbol, stock, signals.buy);
-            }
-            if (signals.sell.reasons.length > 0) {
-                sellCount++;
-                sellContainer.innerHTML += this.createOpportunityCard(symbol, stock, signals.sell);
-            }
-        });
-        
-        if(buyCount === 0) buyContainer.innerHTML = `<p class="text-slate-400 text-center p-4">暫無符合條件的買進機會。</p>`;
-        if(sellCount === 0) sellContainer.innerHTML = `<p class="text-slate-400 text-center p-4">暫無符合條件的賣出機會。</p>`;
-
-        document.querySelectorAll('.opportunity-card').forEach(card => {
-            card.addEventListener('click', () => this.selectStock(card.dataset.symbol));
-        });
-    },
-
-    createOpportunityCard(symbol, stock, signalData) {
-        const isUS = stock.market === 'US';
-        const isUp = stock.change >= 0;
-        const colorClass = isUp ? (isUS ? 'text-green-500' : 'text-red-500') : (isUS ? 'text-red-500' : 'text-green-500');
-        
-        let strengthHTML = '';
-        for (let i = 0; i < 3; i++) {
-            const color = i < signalData.score ? 'bg-yellow-400' : 'bg-slate-600';
-            strengthHTML += `<span class="strength-dot ${color}"></span>`;
-        }
-
-        return `
-            <div class="opportunity-card bg-slate-800 p-4 rounded-lg shadow-sm cursor-pointer active:bg-slate-700" data-symbol="${symbol}">
-                <div class="flex justify-between items-start mb-2">
-                    <p class="font-bold truncate pr-2">${stock.name}</p>
-                    <div class="text-right flex items-center flex-shrink-0">
-                        <span class="font-semibold text-xs mr-2">力度</span>
-                        ${strengthHTML}
-                    </div>
-                </div>
-                <div class="flex justify-between items-end text-sm mt-2 pt-2 border-t border-slate-700">
-                    <div class="text-right flex-shrink-0">
-                        <p class="font-bold text-base ${colorClass}">${stock.currency}${stock.price.toFixed(2)}</p>
-                        <p class="text-sm ${colorClass}">${isUp ? '▲' : '▼'} ${stock.change.toFixed(2)} (${stock.changePercent.toFixed(2)}%)</p>
-                    </div>
-                    <p class="text-slate-400 text-right pl-2">${signalData.reasons[0]}</p>
-                </div>
-            </div>
-        `;
-    },
-
-    async renderDetail(symbol) {
-        const detailContainer = document.getElementById('detail-content');
-        detailContainer.innerHTML = `<div class="loader mx-auto mt-10"></div>`;
-        
-        // Always fetch fresh data for detail view for accuracy
-        const stock = await this.fetchStockData(symbol, true);
-
-        if (stock.error) {
-            detailContainer.innerHTML = `<p class="text-red-500 text-center mt-10">${stock.error}</p>`;
-            return;
-        }
-        
-        document.getElementById('detail-header-title').textContent = `${stock.name} (${symbol})`;
-        
-        detailContainer.innerHTML = `
-            <div class="bg-slate-800 p-4 rounded-xl shadow-md mb-4">
-                <div class="flex justify-between items-start mb-2">
-                    <div>
-                        <p class="text-3xl font-bold ${stock.change >= 0 ? (stock.market === 'US' ? 'text-green-500' : 'text-red-500') : (stock.market === 'US' ? 'text-red-500' : 'text-green-500')}">${stock.currency}${stock.price.toFixed(2)}</p>
-                        <p class="text-base mt-1 ${stock.change >= 0 ? (stock.market === 'US' ? 'text-green-500' : 'text-red-500') : (stock.market === 'US' ? 'text-red-500' : 'text-green-500')}">${stock.change >= 0 ? '▲' : '▼'} ${stock.change.toFixed(2)} (${stock.changePercent.toFixed(2)}%)</p>
-                    </div>
-                    <div class="text-xs text-slate-400 text-right">
-                        <p>當日高: <span class="font-semibold">${stock.high.toFixed(2)}</span></p>
-                        <p>當日低: <span class="font-semibold">${stock.low.toFixed(2)}</span></p>
-                        <p>成交量: <span class="font-semibold">${stock.history[0].volume}</span></p>
-                        ${stock.pe ? `<p>本益比: <span class="font-semibold">${stock.pe}</span></p>` : ''}
-                    </div>
-                </div>
-            </div>
-            <div class="flex bg-slate-700 rounded-lg p-1 mb-4">
-                <button data-tab="analysis" class="detail-tab flex-1 px-4 py-2 text-sm font-semibold rounded-md ${this.state.detailViewTab === 'analysis' ? 'bg-slate-800 shadow' : ''}">分析</button>
-                <button data-tab="chart" class="detail-tab flex-1 px-4 py-2 text-sm font-semibold rounded-md ${this.state.detailViewTab === 'chart' ? 'bg-slate-800 shadow' : ''}">圖表</button>
-                <button data-tab="news" class="detail-tab flex-1 px-4 py-2 text-sm font-semibold rounded-md ${this.state.detailViewTab === 'news' ? 'bg-slate-800 shadow' : ''}">新聞</button>
-            </div>
-            <div id="detail-tab-content"></div>
-        `;
-
-        this.renderDetailTabContent(symbol);
-
-        detailContainer.querySelectorAll('.detail-tab').forEach(tab => {
-            tab.addEventListener('click', (e) => {
-                this.state.detailViewTab = e.currentTarget.dataset.tab;
-                this.renderDetail(symbol);
-            });
-        });
-    },
-
-    renderDetailTabContent(symbol) {
-        const tabContainer = document.getElementById('detail-tab-content');
-        switch(this.state.detailViewTab) {
-            case 'analysis':
-                tabContainer.innerHTML = this.getAnalysisContentHTML(symbol);
-                document.getElementById('gemini-analysis-btn').addEventListener('click', () => this.handleGeminiAnalysis(symbol));
-                break;
-            case 'chart':
-                tabContainer.innerHTML = this.getChartContentHTML();
-                this.renderAdvancedChart(symbol);
-                break;
-            case 'news':
-                tabContainer.innerHTML = this.getNewsContentHTML(symbol);
-                break;
-        }
-    },
-
-    getAnalysisContentHTML(symbol) {
-        const stock = this.state.stockDataCache[symbol];
-        const indicators = this.calculateIndicators(stock);
-        return `
-            <div class="bg-slate-800 p-4 rounded-xl shadow-md mb-4">
-                <h3 class="text-lg font-bold mb-3">近七日價格區間</h3>
-                <div class="space-y-3">${this.render7DayPriceVisual(symbol)}</div>
-            </div>
-            <div class="bg-slate-800 p-4 rounded-xl shadow-md mb-4">
-                <h3 class="text-lg font-bold mb-3">技術指標參考</h3>
-                <div class="grid grid-cols-2 gap-3">
-                    ${this.createAnalysisCard('均線', `5日: ${indicators.ma5.toFixed(2)}<br>10日: ${indicators.ma10.toFixed(2)}`)}
-                    ${this.createAnalysisCard('RSI (14日)', `<span class="font-bold text-xl ${indicators.rsi > 70 ? 'text-red-500' : (indicators.rsi < 30 ? 'text-green-500' : '')}">${indicators.rsi.toFixed(2)}</span>`)}
-                    ${this.createAnalysisCard('布林通道', `上軌: ${indicators.bb.upper.toFixed(2)}<br>下軌: ${indicators.bb.lower.toFixed(2)}`)}
-                    ${this.createAnalysisCard('量價關係', `5日均量比: <span class="font-bold text-xl">${(stock.history[0].volume / indicators.avgVol5).toFixed(2)}</span>`)}
-                </div>
-            </div>
-            <div class="bg-slate-800 p-4 rounded-xl shadow-md">
-                 <h3 class="text-lg font-bold mb-3">Gemini AI 智慧解讀</h3>
-                 <button id="gemini-analysis-btn" class="bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-lg transition-colors w-full" ${this.state.isGeminiLoading ? 'disabled' : ''}>
-                    ${this.state.isGeminiLoading ? '分析中...' : '生成技術面分析 ✨'}
-                 </button>
-                 <div id="gemini-analysis-result" class="mt-4 p-3 bg-slate-700 rounded-lg text-slate-300 min-h-[100px] text-sm">
-                    點擊按鈕，讓 AI 為您解讀目前的技術指標。
-                 </div>
-            </div>
-        `;
-    },
-
-    getChartContentHTML() {
-        return `
-            <div class="bg-slate-800 p-4 rounded-xl shadow-md">
-                <h3 class="text-lg font-bold mb-3">30日 K 線圖</h3>
-                <div class="advanced-chart-container">
-                    <canvas id="advanced-chart"></canvas>
-                </div>
-            </div>
-        `;
-    },
-
-    getNewsContentHTML(symbol) {
-        const stock = this.state.stockDataCache[symbol];
-        const newsItems = [
-            { title: `${stock.name} 發布最新財報，營收超出預期`, source: '財經日報', time: '2小時前' },
-            { title: `分析師看好 ${stock.name} 未來發展，上調目標價`, source: '股市前線', time: '8小時前' },
-            { title: `市場傳聞：${stock.name} 將推出革命性新產品`, source: '科技新報', time: '1天前' },
-            { title: `全球供應鏈緊張，${stock.name} 是否受到影響？`, source: '國際經濟', time: '2天前' },
-        ];
-        
-        return `
-            <div class="bg-slate-800 p-4 rounded-xl shadow-md">
-                <h3 class="text-lg font-bold mb-3">市場新聞與資訊</h3>
-                <div class="space-y-4">
-                    ${newsItems.map(item => `
-                        <div class="border-b border-slate-700 pb-3">
-                            <h4 class="font-semibold text-base">${item.title}</h4>
-                            <div class="text-xs text-slate-400 mt-1 flex justify-between">
-                                <span>${item.source}</span>
-                                <span>${item.time}</span>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        `;
-    },
-    
-    render7DayPriceVisual(symbol) {
-        const history = this.state.stockDataCache[symbol].history;
-        if (!history || history.length === 0) return '';
-        const last7Days = history.slice(0, 7);
-        const allLows = last7Days.map(d => d.low);
-        const allHighs = last7Days.map(d => d.high);
-        const minPrice = Math.min(...allLows);
-        const maxPrice = Math.max(...allHighs);
-        const totalRange = maxPrice - minPrice;
-
-        if (totalRange === 0) return '<p>價格無波動</p>';
-
-        let html = '';
-        last7Days.forEach(day => {
-            const dayRange = day.high - day.low;
-            const barWidth = (dayRange / totalRange) * 100;
-            const barLeft = ((day.low - minPrice) / totalRange) * 100;
-            const tickLeft = dayRange > 0 ? ((day.close - day.low) / dayRange) * 100 : 50;
-            
-            html += `
-                <div class="flex items-center text-sm">
-                    <span class="w-12 text-slate-400">${day.date.substring(5)}</span>
-                    <div class="flex-1 price-range-bar-bg bg-slate-700 mx-2">
-                        <div class="price-range-bar-fg bg-sky-800" style="width: ${barWidth}%; left: ${barLeft}%;">
-                            <div class="price-range-bar-tick bg-sky-400" style="left: ${tickLeft}%;"></div>
-                        </div>
-                    </div>
-                    <span class="w-28 text-right font-semibold text-slate-300">${day.low.toFixed(2)}~${day.high.toFixed(2)}</span>
-                </div>
-            `;
-        });
-        return html;
-    },
-
-    renderAdvancedChart(symbol) {
-        if (this.state.advancedChartInstance) {
-            this.state.advancedChartInstance.destroy();
-        }
-        const history = this.state.stockDataCache[symbol].history.slice(0, 30).reverse();
-        const ctx = document.getElementById('advanced-chart').getContext('2d');
-        
-        const data = history.map(d => ({
-            x: new Date(d.date).getTime(),
-            o: d.open,
-            h: d.high,
-            l: d.low,
-            c: d.close
-        }));
-
-        this.state.advancedChartInstance = new Chart(ctx, {
-            type: 'candlestick',
-            data: {
-                datasets: [{
-                    label: `${symbol} K-Line`,
-                    data: data,
-                    color: {
-                        up: '#22c55e',
-                        down: '#ef4444',
-                        unchanged: '#94a3b8'
-                    }
-                }]
-            },
-            options: {
-                maintainAspectRatio: false,
-                responsive: true,
-                scales: {
-                    x: {
-                        type: 'time',
-                        time: { unit: 'day' },
-                        grid: { color: 'rgba(71, 85, 105, 0.5)' },
-                        ticks: { color: '#94a3b8' }
-                    },
-                    y: { 
-                        grid: { color: 'rgba(71, 85, 105, 0.5)' },
-                        ticks: { color: '#94a3b8' }
-                    }
-                },
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const d = context.raw;
-                                return ` 開: ${d.o.toFixed(2)} 高: ${d.h.toFixed(2)} 低: ${d.l.toFixed(2)} 收: ${d.c.toFixed(2)}`;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    },
-
-    createAnalysisCard(title, content) {
-        return `
-            <div class="bg-slate-700 p-3 rounded-lg text-center">
-                <h4 class="font-semibold text-slate-300 text-xs mb-1">${title}</h4>
-                <div class="text-slate-400 text-sm leading-relaxed">${content}</div>
-            </div>
-        `;
-    },
-
-    selectStock(symbol) {
-        this.state.previousView = this.state.currentView;
-        this.state.selectedStock = symbol;
-        this.state.detailViewTab = 'analysis'; // Reset to default tab
-        this.renderDetail(symbol);
-        const detailView = document.getElementById('view-detail');
-        detailView.classList.remove('hidden');
-        requestAnimationFrame(() => {
-            detailView.classList.remove('translate-x-full');
-        });
-    },
-
-    closeDetailView() {
-        const detailView = document.getElementById('view-detail');
-        detailView.classList.add('translate-x-full');
-        setTimeout(() => {
-            detailView.classList.add('hidden');
-            this.state.selectedStock = null;
-            if (this.state.advancedChartInstance) {
-                this.state.advancedChartInstance.destroy();
-                this.state.advancedChartInstance = null;
-            }
-            this.navigate(this.state.previousView);
-        }, 300);
-    },
-    
-    toggleModal(show) {
-        const modal = document.getElementById('add-stock-modal');
-        const feedbackEl = document.getElementById('add-stock-feedback');
-        const inputEl = document.getElementById('add-stock-input');
-        const promptEl = document.getElementById('add-stock-prompt');
-        feedbackEl.textContent = '';
-        inputEl.value = '';
-
-        if (show) {
-            const market = this.state.watchlistMarketView === 'TW' ? '台股' : '美股';
-            const example = this.state.watchlistMarketView === 'TW' ? '2330' : 'AAPL';
-            promptEl.textContent = `請輸入${market}代號 (例如: ${example})`;
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
-            inputEl.focus();
-        } else {
-            modal.classList.add('hidden');
-            modal.classList.remove('flex');
-        }
-    },
-
-    async addStockFromInput() {
-        const inputEl = document.getElementById('add-stock-input');
-        const feedbackEl = document.getElementById('add-stock-feedback');
-        let symbol = inputEl.value.trim().toUpperCase();
-
-        if (!symbol) {
-            feedbackEl.textContent = '請輸入股票代號。';
-            return;
-        }
-
-        if (!symbol.includes('.')) {
-            const suffix = this.state.watchlistMarketView === 'TW' ? '.TW' : '.US';
-            symbol += suffix;
-        }
-
-        if (this.state.watchlist.includes(symbol)) {
-            feedbackEl.textContent = '此股票已在自選清單中。';
-            return;
-        }
-        
-        const stockData = await this.fetchStockData(symbol, true);
-        if (stockData.error) {
-            feedbackEl.textContent = `新增失敗: ${stockData.error}`;
-            delete this.state.stockDataCache[symbol];
-        } else {
-            this.state.watchlist.unshift(symbol);
-            this.render();
-            this.toggleModal(false);
-        }
-    },
-
-    removeStock(symbol) {
-        this.state.watchlist = this.state.watchlist.filter(s => s !== symbol);
-        delete this.state.stockDataCache[symbol];
-        this.render();
-    },
-
-    calculateIndicators(stockData) {
-        const history = stockData.history;
-        if (!history || history.length < 20) return { ma3: 0, ma5: 0, ma10: 0, ma20: 0, rsi: 50, bb: { upper: 0, middle: 0, lower: 0 }, high30: 0, low30: 0, avgVol5: 0 };
-        const closes = history.map(d => d.close);
-        const highs = history.map(d => d.high);
-        const lows = history.map(d => d.low);
-        const volumes = history.map(d => d.volume);
-        const sum = (arr) => arr.reduce((a, b) => a + b, 0);
-        const avg = (arr) => sum(arr) / arr.length;
-        const ma = (period) => avg(closes.slice(0, period));
-        const high30 = Math.max(...highs.slice(0, 30));
-        const low30 = Math.min(...lows.slice(0, 30));
-        const avgVol5 = avg(volumes.slice(0, 5));
-        let gains = 0, losses = 0;
-        for (let i = 1; i < 15; i++) {
-            const diff = closes[i-1] - closes[i];
-            if (diff > 0) gains += diff; else losses -= diff;
-        }
-        const rs = (gains / 14) / (losses / 14);
-        const rsi = isFinite(rs) ? 100 - (100 / (1 + rs)) : (losses === 0 ? 100 : 0);
-        const ma20 = ma(20);
-        const stdDev = Math.sqrt(avg(closes.slice(0, 20).map(p => Math.pow(p - ma20, 2))));
-        const bb = { upper: ma20 + (stdDev * 2), middle: ma20, lower: ma20 - (stdDev * 2) };
-        return { ma3: ma(3), ma5: ma(5), ma10: ma(10), ma20, rsi, bb, high30, low30, avgVol5 };
-    },
-
-    getSignals(symbol, stock, indicators) {
-        const buyReasons = [], sellReasons = [];
-        if (indicators.rsi < 30) buyReasons.push('RSI 進入超賣區 (<30)');
-        if (stock.price <= indicators.bb.lower) buyReasons.push('股價觸及布林通道下軌');
-        if (stock.price <= indicators.ma10 && stock.price >= indicators.ma10 * 0.98) buyReasons.push('股價回測10日線');
-        if (indicators.rsi > 70) sellReasons.push('RSI 進入超買區 (>70)');
-        if (stock.price >= indicators.bb.upper) sellReasons.push('股價觸及布林通道上軌');
-        if (stock.price / indicators.ma5 > 1.08) sellReasons.push('股價與5日線乖離過大');
-        return {
-            buy: { reasons: buyReasons, score: Math.min(buyReasons.length, 3) },
-            sell: { reasons: sellReasons, score: Math.min(sellReasons.length, 3) }
-        };
-    },
-    
-    async handleGeminiAnalysis(symbol) {
-        if (this.state.isGeminiLoading) return;
-        this.state.isGeminiLoading = true;
-        const resultContainer = document.getElementById('gemini-analysis-result');
-        const analysisBtn = document.getElementById('gemini-analysis-btn');
-        analysisBtn.disabled = true;
-        analysisBtn.innerHTML = '分析中...';
-        resultContainer.innerHTML = '<div class="loader"></div>';
-        
-        const stock = this.state.stockDataCache[symbol];
-        const indicators = this.calculateIndicators(stock);
-        
-        try {
-            // 修改：呼叫我們自己的後端 API
-            const response = await fetch('/api/get-stock-data', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ stock, indicators }) // 將資料傳給後端
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || `API 請求失敗: ${response.status}`);
-            }
-
-            const result = await response.json();
-            
-            if (result.analysis) {
-                resultContainer.innerHTML = this.formatGeminiResponse(result.analysis);
-            } else {
-                throw new Error('從 API 收到的回應格式不正確。');
-            }
-
-        } catch (error) {
-            resultContainer.innerHTML = `<p class="text-red-500">分析時發生錯誤：${error.message}</p>`;
-        } finally {
-            this.state.isGeminiLoading = false;
-            analysisBtn.disabled = false;
-            analysisBtn.innerHTML = '重新生成分析 ✨';
-        }
-    },
-
-    formatGeminiResponse(text) {
-        let html = text
-            .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-100 block mb-2">$1</strong>')
-            .replace(/\* (.*?)(?=\n\* |$)/g, '<li class="mb-1">$1</li>');
-        
-        if (html.includes('<li>')) {
-            html = html.replace(/<li>/, '<ul class="list-disc list-inside space-y-1"><li>');
-            html += '</ul>';
-        }
-        return html;
+// Vercel Serverless Function
+// 檔案必須放在專案的 /api/ 資料夾下
+// 檔名即為 API 路徑，例如 /api/get-stock-data
+
+export default async function handler(request, response) {
+  // 根據請求的方法 (GET 或 POST) 決定執行哪個功能
+  if (request.method === 'GET') {
+    return handleGetStockData(request, response);
+  } else if (request.method === 'POST') {
+    return handleGeminiAnalysis(request, response);
+  } else {
+    // 如果是其他類型的請求，回傳錯誤
+    response.setHeader('Allow', ['GET', 'POST']);
+    return response.status(405).end(`Method ${request.method} Not Allowed`);
+  }
+}
+
+// 處理從 Alpha Vantage 獲取股價資料的邏輯
+async function handleGetStockData(request, response) {
+  try {
+    const { symbol } = request.query;
+    if (!symbol) {
+      return response.status(400).json({ error: '必須提供股票代號' });
     }
-};
 
-document.addEventListener('DOMContentLoaded', () => App.init());
-</script>
+    const alphaVantageApiKey = process.env.ALPHA_VANTAGE_API_KEY;
+    if (!alphaVantageApiKey) {
+      return response.status(500).json({ error: 'ALPHA_VANTAGE_API_KEY 未設定' });
+    }
 
-</body>
-</ht
+    const quoteUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${alphaVantageApiKey}`;
+    const historyUrl = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&apikey=${alphaVantageApiKey}`;
+
+    const [quoteResponse, historyResponse] = await Promise.all([
+      fetch(quoteUrl),
+      fetch(historyUrl)
+    ]);
+
+    if (!quoteResponse.ok || !historyResponse.ok) {
+      throw new Error('從 Alpha Vantage 獲取資料失敗');
+    }
+
+    const quoteData = await quoteResponse.json();
+    const historyData = await historyResponse.json();
+
+    if (quoteData['Note'] || historyData['Note']) {
+      return response.status(503).json({ error: '已達到 Alpha Vantage API 請求上限' });
+    }
+    if (!quoteData['Global Quote'] || Object.keys(quoteData['Global Quote']).length === 0) {
+      return response.status(404).json({ error: `找不到報價資料: ${symbol}` });
+    }
+    if (!historyData['Time Series (Daily)']) {
+      return response.status(404).json({ error: `找不到歷史資料: ${symbol}` });
+    }
+
+    const globalQuote = quoteData['Global Quote'];
+    const timeSeries = historyData['Time Series (Daily)'];
+    
+    const processedHistory = Object.entries(timeSeries).slice(0, 30).map(([date, data]) => ({
+      date: date,
+      open: parseFloat(data['1. open']),
+      high: parseFloat(data['2. high']),
+      low: parseFloat(data['3. low']),
+      close: parseFloat(data['4. close']),
+      volume: parseInt(data['5. volume'])
+    }));
+
+    const processedData = {
+      symbol: globalQuote['01. symbol'],
+      price: parseFloat(globalQuote['05. price']),
+      change: parseFloat(globalQuote['09. change']),
+      changePercent: parseFloat(globalQuote['10. change percent'].replace('%', '')),
+      high: parseFloat(globalQuote['03. high']),
+      low: parseFloat(globalQuote['04. low']),
+      history: processedHistory,
+    };
+
+    response.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate');
+    return response.status(200).json(processedData);
+
+  } catch (error) {
+    console.error('handleGetStockData Error:', error);
+    return response.status(500).json({ error: '伺服器內部發生錯誤' });
+  }
+}
+
+// 處理呼叫 Gemini API 進行 AI 分析的邏輯
+async function handleGeminiAnalysis(request, response) {
+  try {
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!geminiApiKey) {
+      return response.status(500).json({ error: 'GEMINI_API_KEY 未設定' });
+    }
+
+    const { stock, indicators } = request.body;
+
+    const prompt = `You are a helpful financial analyst assistant for retail investors in Taiwan. Your tone should be neutral, informative, and easy to understand, avoiding hype or definitive financial advice. Based on the following real-time technical data for the stock, provide a brief analysis in Traditional Chinese, formatted in Markdown. Follow this structure: 1. Start with a one-sentence summary in bold. 2. Then, explain the key indicators in a bulleted list. 3. Conclude with the mandatory disclaimer: "此分析僅供參考，不構成任何投資建議。" Data: - Stock Name: ${stock.name} - Current Price: ${stock.price.toFixed(2)} ${stock.currency} - RSI (14D): ${indicators.rsi.toFixed(2)} - Price vs Bollinger Bands (20D): The price is ${stock.price > indicators.bb.upper ? 'above the upper band' : stock.price < indicators.bb.lower ? 'below the lower band' : 'within the bands'}. - Price vs Moving Averages: The price is ${stock.price > indicators.ma20 ? 'above' : 'below'} the 20-day moving average. - Volume Ratio (vs 5D Avg): ${(stock.history[0].volume / indicators.avgVol5).toFixed(2)}x Please provide the analysis.`;
+
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${geminiApiKey}`;
+    const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+
+    const geminiResponse = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    if (!geminiResponse.ok) {
+        throw new Error(`Gemini API 請求失敗: ${geminiResponse.status}`);
+    }
+
+    const result = await geminiResponse.json();
+
+    if (result.candidates?.[0]?.content?.parts?.[0]) {
+        const text = result.candidates[0].content.parts[0].text;
+        return response.status(200).json({ analysis: text });
+    } else {
+        throw new Error('從 Gemini API 收到的回應格式不正確。');
+    }
+
+  } catch (error) {
+    console.error('handleGeminiAnalysis Error:', error);
+    return response.status(500).json({ error: 'Gemini 分析時發生錯誤' });
+  }
+}
