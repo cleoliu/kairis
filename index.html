@@ -132,9 +132,7 @@
 
             <!-- Scanner View -->
             <div id="view-scanner" class="view hidden">
-                 <div id="scanner-header-content" class="mb-4">
-                    <!-- Scanner sub-tabs and last updated time injected here -->
-                 </div>
+                <p id="scanner-last-updated" class="text-xs text-slate-500 text-right mb-2"></p>
                 <p class="text-sm text-slate-400">本頁面會自動掃描您自選列表中的所有股票，並根據預設的技術指標，篩選出符合特定條件的潛在買賣機會。</p>
                 <div class="space-y-6 mt-4">
                     <div>
@@ -463,18 +461,26 @@ const App = {
         if (this.state.currentView === 'watchlist') {
             content = `
                 <div class="flex justify-between items-center">
-                    <div class="flex bg-slate-700 rounded-lg p-1">
-                        <button data-market="US" class="market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.watchlistMarketView === 'US' ? 'bg-slate-800 shadow' : ''}">美股</button>
-                        <button data-market="TW" class="market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.watchlistMarketView === 'TW' ? 'bg-slate-800 shadow' : ''}">台股</button>
-                    </div>
                     <div class="flex items-center gap-2">
-                        ${authContent}
-                        <button id="add-stock-btn" class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-3 rounded-lg transition-colors text-lg">+</button>
+                        <div class="flex bg-slate-700 rounded-lg p-1">
+                            <button data-market="US" class="market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.watchlistMarketView === 'US' ? 'bg-slate-800 shadow' : ''}">美股</button>
+                            <button data-market="TW" class="market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.watchlistMarketView === 'TW' ? 'bg-slate-800 shadow' : ''}">台股</button>
+                        </div>
+                        <button id="add-stock-btn" class="bg-sky-500 hover:bg-sky-600 text-white font-bold h-9 w-9 flex items-center justify-center rounded-lg transition-colors text-lg">+</button>
                     </div>
+                    ${authContent}
                 </div>
             `;
         } else if (this.state.currentView === 'scanner') {
-            content = `<div class="flex justify-between items-center"><h2 class="text-xl font-bold text-center flex-1">機會掃描</h2>${authContent}</div>`;
+            content = `
+                <div class="flex justify-between items-center">
+                    <div class="flex bg-slate-700 rounded-lg p-1">
+                        <button data-market="US" class="scanner-market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.scannerMarketView === 'US' ? 'bg-slate-800 shadow' : ''}">美股</button>
+                        <button data-market="TW" class="scanner-market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.scannerMarketView === 'TW' ? 'bg-slate-800 shadow' : ''}">台股</button>
+                    </div>
+                    ${authContent}
+                </div>
+            `;
         }
         header.innerHTML = content;
 
@@ -489,6 +495,13 @@ const App = {
             document.querySelectorAll('.market-tab').forEach(tab => {
                 tab.addEventListener('click', (e) => {
                     this.state.watchlistMarketView = e.currentTarget.dataset.market;
+                    this.render();
+                });
+            });
+        } else if (this.state.currentView === 'scanner') {
+            document.querySelectorAll('.scanner-market-tab').forEach(tab => {
+                tab.addEventListener('click', (e) => {
+                    this.state.scannerMarketView = e.currentTarget.dataset.market;
                     this.render();
                 });
             });
@@ -566,6 +579,7 @@ const App = {
                             <span>3日線: ${indicators.ma3.toFixed(2)}${stock.price < indicators.ma3 ? '<span class="ma-star"> ★</span>' : ''}</span>
                             <span>5日線: ${indicators.ma5.toFixed(2)}${stock.price < indicators.ma5 ? '<span class="ma-star"> ★</span>' : ''}</span>
                             <span>10日線: ${indicators.ma10.toFixed(2)}${stock.price < indicators.ma10 ? '<span class="ma-star"> ★</span>' : ''}</span>
+                            <span>30日線: ${indicators.ma30.toFixed(2)}${stock.price < indicators.ma30 ? '<span class="ma-star"> ★</span>' : ''}</span>
                         </div>
                     </div>
                 </div>
@@ -588,23 +602,7 @@ const App = {
     },
 
     renderScanner() {
-        const scannerHeaderEl = document.getElementById('scanner-header-content');
-        scannerHeaderEl.innerHTML = `
-            <div class="flex justify-between items-center">
-                <div class="flex bg-slate-700 rounded-lg p-1">
-                    <button data-market="US" class="scanner-market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.scannerMarketView === 'US' ? 'bg-slate-800 shadow' : ''}">美股</button>
-                    <button data-market="TW" class="scanner-market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.scannerMarketView === 'TW' ? 'bg-slate-800 shadow' : ''}">台股</button>
-                </div>
-                <p class="text-xs text-slate-500">${`最後更新: ${this.state.lastUpdated.toLocaleTimeString('zh-TW')}`}</p>
-            </div>
-        `;
-        scannerHeaderEl.querySelectorAll('.scanner-market-tab').forEach(tab => {
-            tab.addEventListener('click', (e) => {
-                this.state.scannerMarketView = e.currentTarget.dataset.market;
-                this.render();
-            });
-        });
-
+        document.getElementById('scanner-last-updated').textContent = `最後更新: ${this.state.lastUpdated.toLocaleTimeString('zh-TW')}`;
         const buyContainer = document.getElementById('buy-opportunities');
         const sellContainer = document.getElementById('sell-opportunities');
         
@@ -897,7 +895,7 @@ const App = {
                             <div class="price-range-bar-tick bg-sky-400" style="left: ${tickLeft}%;"></div>
                         </div>
                     </div>
-                    <span class="w-28 text-right font-semibold text-slate-300">$${day.low.toFixed(2)}~${day.high.toFixed(2)}</span>
+                    <span class="w-28 text-right font-semibold text-slate-300">${day.low.toFixed(2)}~${day.high.toFixed(2)}</span>
                 </div>
             `;
         });
