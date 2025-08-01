@@ -669,6 +669,9 @@ const App = {
     getAnalysisContentHTML(symbol) {
         const stock = this.state.stockDataCache[symbol];
         const indicators = this.calculateIndicators(stock);
+        const macdColor = indicators.macd.histogram >= 0 ? 'text-green-500' : 'text-red-500';
+        const macdDirection = indicators.macd.histogram >= 0 ? '多頭' : '空頭';
+
         return `
             <div class="bg-slate-800 p-4 rounded-xl shadow-md mb-4">
                 <h3 class="text-lg font-bold mb-3">近七日價格區間</h3>
@@ -677,8 +680,8 @@ const App = {
             <div class="bg-slate-800 p-4 rounded-xl shadow-md mb-4">
                 <h3 class="text-lg font-bold mb-3">技術指標參考</h3>
                 <div class="grid grid-cols-2 gap-3">
-                    ${this.createAnalysisCard('均線', `5日: ${indicators.ma5.toFixed(2)}<br>10日: ${indicators.ma10.toFixed(2)}`)}
                     ${this.createAnalysisCard('RSI (14日)', `<span class="font-bold text-xl ${indicators.rsi > 70 ? 'text-red-500' : (indicators.rsi < 30 ? 'text-green-500' : '')}">${indicators.rsi.toFixed(2)}</span>`)}
+                    ${this.createAnalysisCard('MACD (12,26,9)', `<span class="font-bold text-xl ${macdColor}">${indicators.macd.histogram.toFixed(2)}</span><br><span class="text-xs ${macdColor}">${macdDirection}動能</span>`)}
                     ${this.createAnalysisCard('布林通道', `上軌: ${indicators.bb.upper.toFixed(2)}<br>下軌: ${indicators.bb.lower.toFixed(2)}`)}
                     ${this.createAnalysisCard('量價關係', `5日均量比: <span class="font-bold text-xl">${(stock.history[0].volume / indicators.avgVol5).toFixed(2)}</span>`)}
                 </div>
@@ -1055,36 +1058,69 @@ const App = {
         const history = stockData.history;
         if (!history || history.length < 30) return { ma3: 0, ma5: 0, ma10: 0, ma20: 0, ma30: 0, rsi: 50, bb: { upper: 0, middle: 0, lower: 0 }, high30: 0, low30: 0, avgVol5: 0 };
         const closes = history.map(d => d.close);
-        const highs = history.map(d => d.high);
-        const lows = history.map(d => d.low);
-        const volumes = history.map(d => d.volume);
+        if (!history || history.length < 35) return { ma3: 0, ma5: 0, ma10: 0, ma20: 0, ma30: 0, rsi: 50, bb: { upper: 0, middle: 0, lower: 0 }, macd: { macd: 0, signal: 0, histogram: 0 }, high30: 0, low30: 0, avgVol5: 0 };
+        const closes = history.map(d => d.close).reverse(); // Oldest to newest
+        const volumes = history.map(d => d.volume).reverse();
+        
         const sum = (arr) => arr.reduce((a, b) => a + b, 0);
         const avg = (arr) => sum(arr) / arr.length;
-        const ma = (period) => avg(closes.slice(0, period));
-        const high30 = Math.max(...highs.slice(0, 30));
-        const low30 = Math.min(...lows.slice(0, 30));
-        const avgVol5 = avg(volumes.slice(0, 5));
+        const ma = (period) => avg(closes.slice(-period));
+        
+        const high30 = Math.max(...history.slice(0, 30).map(d => d.high));
+        const low30 = Math.min(...history.slice(0, 30).map(d => d.low));
+        const avgVol5 = avg(volumes.slice(-5));
+
         let gains = 0, losses = 0;
-        for (let i = 1; i < 15; i++) {
-            const diff = closes[i-1] - closes[i];
+        for (let i = closes.length - 14; i < closes.length; i++) {
+            const diff = closes[i] - closes[i-1];
             if (diff > 0) gains += diff; else losses -= diff;
         }
         const rs = (gains / 14) / (losses / 14);
         const rsi = isFinite(rs) ? 100 - (100 / (1 + rs)) : (losses === 0 ? 100 : 0);
+
         const ma20 = ma(20);
-        const stdDev = Math.sqrt(avg(closes.slice(0, 20).map(p => Math.pow(p - ma20, 2))));
+        const stdDev = Math.sqrt(avg(closes.slice(-20).map(p => Math.pow(p - ma20, 2))));
         const bb = { upper: ma20 + (stdDev * 2), middle: ma20, lower: ma20 - (stdDev * 2) };
-        return { ma3: ma(3), ma5: ma(5), ma10: ma(10), ma20, ma30: ma(30), rsi, bb, high30, low30, avgVol5 };
+
+        // MACD Calculation
+        const ema = (data, period) => {
+            const multiplier = 2 / (period + 1);
+            let emaArray = [avg(data.slice(0, period))];
+            for (let i = period; i < data.length; i++) {
+                const newEma = (data[i] - emaArray[emaArray.length - 1]) * multiplier + emaArray[emaArray.length - 1];
+                emaArray.push(newEma);
+            }
+            return emaArray;
+        };
+        const ema12 = ema(closes, 12);
+        const ema26 = ema(closes, 26);
+        const macdLine = ema12.slice(-ema26.length).map((val, idx) => val - ema26[idx]);
+        const signalLine = ema(macdLine, 9);
+        const macd = {
+            macd: macdLine[macdLine.length - 1],
+            signal: signalLine[signalLine.length - 1],
+            histogram: macdLine[macdLine.length - 1] - signalLine[signalLine.length - 1],
+            prevMacd: macdLine[macdLine.length - 2],
+            prevSignal: signalLine[signalLine.length - 2],
+        };
+
+        return { ma3: ma(3), ma5: ma(5), ma10: ma(10), ma20, ma30: ma(30), rsi, bb, macd, high30, low30, avgVol5 };
     },
 
     getSignals(symbol, stock, indicators) {
         const buyReasons = [], sellReasons = [];
-        if (indicators.rsi < 30) buyReasons.push('RSI 進入超賣區 (<30)');
-        if (stock.price <= indicators.bb.lower) buyReasons.push('股價觸及布林通道下軌');
+        if (indicators.rsi < 35) buyReasons.push('RSI 接近超賣區');
+        if (stock.price <= indicators.bb.lower * 1.01) buyReasons.push('股價接近布林通道下軌');
         if (stock.price <= indicators.ma10 && stock.price >= indicators.ma10 * 0.98) buyReasons.push('股價回測10日線');
-        if (indicators.rsi > 70) sellReasons.push('RSI 進入超買區 (>70)');
-        if (stock.price >= indicators.bb.upper) sellReasons.push('股價觸及布林通道上軌');
+        if (stock.history[0].volume > indicators.avgVol5 * 1.5 && stock.change > 0) buyReasons.push('價漲量增');
+        if (indicators.macd.prevMacd < indicators.macd.prevSignal && indicators.macd.macd > indicators.macd.signal) buyReasons.push('MACD 黃金交叉');
+
+        if (indicators.rsi > 65) sellReasons.push('RSI 接近超買區');
+        if (stock.price >= indicators.bb.upper * 0.99) sellReasons.push('股價接近布林通道上軌');
         if (stock.price / indicators.ma5 > 1.08) sellReasons.push('股價與5日線乖離過大');
+        if (stock.history[0].volume > indicators.avgVol5 * 1.5 && stock.change < 0) sellReasons.push('價跌量增');
+        if (indicators.macd.prevMacd > indicators.macd.prevSignal && indicators.macd.macd < indicators.macd.signal) sellReasons.push('MACD 死亡交叉');
+
         return {
             buy: { reasons: buyReasons, score: Math.min(buyReasons.length, 3) },
             sell: { reasons: sellReasons, score: Math.min(sellReasons.length, 3) }
