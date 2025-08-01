@@ -456,10 +456,11 @@ const App = {
                             <span>高: <span class="text-red-500">${stock.high.toFixed(2)}</span></span>
                             <span>低: <span class="text-green-500">${stock.low.toFixed(2)}</span></span>
                         </div>
-                        <div class="flex justify-between mt-1">
+                        <div class="grid grid-cols-2 gap-x-4 mt-1">
                             <span>3日線: ${indicators.ma3.toFixed(2)}${stock.price < indicators.ma3 ? '<span class="ma-star"> ★</span>' : ''}</span>
                             <span>5日線: ${indicators.ma5.toFixed(2)}${stock.price < indicators.ma5 ? '<span class="ma-star"> ★</span>' : ''}</span>
                             <span>10日線: ${indicators.ma10.toFixed(2)}${stock.price < indicators.ma10 ? '<span class="ma-star"> ★</span>' : ''}</span>
+                            <span>30日線: ${indicators.ma30.toFixed(2)}${stock.price < indicators.ma30 ? '<span class="ma-star"> ★</span>' : ''}</span>
                         </div>
                     </div>
                 </div>
@@ -1015,7 +1016,7 @@ const App = {
 
     calculateIndicators(stockData) {
         const history = stockData.history;
-        if (!history || history.length < 20) return { ma3: 0, ma5: 0, ma10: 0, ma20: 0, rsi: 50, bb: { upper: 0, middle: 0, lower: 0 }, high30: 0, low30: 0, avgVol5: 0 };
+        if (!history || history.length < 30) return { ma3: 0, ma5: 0, ma10: 0, ma20: 0, ma30: 0, rsi: 50, bb: { upper: 0, middle: 0, lower: 0 }, high30: 0, low30: 0, avgVol5: 0 };
         const closes = history.map(d => d.close);
         const highs = history.map(d => d.high);
         const lows = history.map(d => d.low);
@@ -1036,7 +1037,7 @@ const App = {
         const ma20 = ma(20);
         const stdDev = Math.sqrt(avg(closes.slice(0, 20).map(p => Math.pow(p - ma20, 2))));
         const bb = { upper: ma20 + (stdDev * 2), middle: ma20, lower: ma20 - (stdDev * 2) };
-        return { ma3: ma(3), ma5: ma(5), ma10: ma(10), ma20, rsi, bb, high30, low30, avgVol5 };
+        return { ma3: ma(3), ma5: ma(5), ma10: ma(10), ma20, ma30: ma(30), rsi, bb, high30, low30, avgVol5 };
     },
 
     getSignals(symbol, stock, indicators) {
@@ -1095,14 +1096,15 @@ const App = {
     },
 
     formatGeminiResponse(text) {
-        let html = text
-            .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-100 block mb-2">$1</strong>')
-            .replace(/\* (.*?)(?=\n\* |$)/g, '<li class="mb-1">$1</li>');
+        let html = text.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-100 block mb-2">$1</strong>');
         
-        if (html.includes('<li>')) {
-            html = html.replace(/<li>/, '<ul class="list-disc list-inside space-y-1"><li>');
-            html += '</ul>';
-        }
+        const listItemsRegex = /(\* .+(\n|$))+/g;
+        html = html.replace(listItemsRegex, (match) => {
+            const items = match.trim().split('\n');
+            const listHtml = items.map(item => `<li class="mb-1">${item.substring(2).trim()}</li>`).join('');
+            return `<ul class="list-disc list-inside space-y-1">${listHtml}</ul>`;
+        });
+        
         return html;
     }
 };
