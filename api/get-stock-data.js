@@ -1,11 +1,13 @@
-// Vercel Serverless Function
+// Vercel Serverless Function with KV Caching
 // 檔案路徑: /api/get-stock-data.js
+// 需要在 Vercel 專案中連結 Vercel KV 儲存體
+
+import { kv } from '@vercel/kv';
 
 export default async function handler(request, response) {
   const { action } = request.query;
 
   if (request.method === 'GET') {
-    // 根據 'action' 參數決定是獲取股價還是新聞
     if (action === 'get_news') {
       return handleGetNews(request, response);
     }
@@ -18,7 +20,7 @@ export default async function handler(request, response) {
   }
 }
 
-// 處理從 Finnhub (即時) 和 Alpha Vantage (歷史) 獲取股價資料的邏輯
+// 處理從 Finnhub (即時) 和 FMP (歷史) 獲取股價資料的邏輯
 async function handleGetStockData(request, response) {
   try {
     const { symbol } = request.query;
@@ -26,72 +28,76 @@ async function handleGetStockData(request, response) {
       return response.status(400).json({ error: '必須提供股票代號' });
     }
 
-    // 準備給不同 API 使用的代號
-    const finnhubSymbol = symbol.replace(/\.US$|\.TW$/, '');
-    const alphaVantageSymbol = symbol.endsWith('.US') ? symbol.replace('.US', '') : symbol;
-
-    // 從環境變數中讀取兩個 API 的金鑰
     const finnhubApiKey = process.env.FINNHUB_API_KEY;
-    const alphaVantageApiKey = process.env.ALPHA_VANTAGE_API_KEY;
+    const fmpApiKey = process.env.FMP_API_KEY;
 
-    if (!finnhubApiKey || !alphaVantageApiKey) {
-      return response.status(500).json({ error: 'FINNHUB_API_KEY 或 ALPHA_VANTAGE_API_KEY 未設定' });
+    if (!finnhubApiKey || !fmpApiKey) {
+      return response.status(500).json({ error: 'FINNHUB_API_KEY 或 FMP_API_KEY 未設定' });
     }
 
-    // 準備並行發送請求到不同的 API
-    const profileUrl = `https://finnhub.io/api/v1/stock/profile2?symbol=${finnhubSymbol}&token=${finnhubApiKey}`;
-    const quoteUrl = `https://finnhub.io/api/v1/quote?symbol=${finnhubSymbol}&token=${finnhubApiKey}`;
-    const historyUrl = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${alphaVantageSymbol}&apikey=${alphaVantageApiKey}`;
+    const quoteCacheKey = `quote_finnhub_${symbol}`;
+    const historyCacheKey = `history_fmp_${symbol}`;
 
-    const [profileResponse, quoteResponse, historyResponse] = await Promise.all([
-      fetch(profileUrl),
-      fetch(quoteUrl),
-      fetch(historyUrl)
-    ]);
+    let quoteData = await kv.get(quoteCacheKey);
+    let historyData = await kv.get(historyCacheKey);
 
-    // 分別處理回傳結果
-    if (!profileResponse.ok || !quoteResponse.ok) {
+    // 從 Finnhub 獲取即時報價 (若快取中沒有)
+    if (!quoteData) {
+      const finnhubSymbol = symbol.replace(/\.US$|\.TW$/, '');
+      const profileUrl = `https://finnhub.io/api/v1/stock/profile2?symbol=${finnhubSymbol}&token=${finnhubApiKey}`;
+      const finnhubQuoteUrl = `https://finnhub.io/api/v1/quote?symbol=${finnhubSymbol}&token=${finnhubApiKey}`;
+      
+      const [profileResponse, finnhubQuoteResponse] = await Promise.all([fetch(profileUrl), fetch(finnhubQuoteUrl)]);
+      if (!profileResponse.ok || !finnhubQuoteResponse.ok) {
         return response.status(404).json({ error: `找不到 Finnhub 即時報價資料: ${symbol}` });
-    }
-    if (!historyResponse.ok) {
-        return response.status(500).json({ error: `從 Alpha Vantage 獲取歷史資料失敗` });
+      }
+      const profileJson = await profileResponse.json();
+      const quoteJson = await finnhubQuoteResponse.json();
+
+      if (quoteJson.c === 0 && !profileJson.name) {
+         return response.status(404).json({ error: `找不到 Finnhub 資料: ${symbol}` });
+      }
+      quoteData = {
+          name: profileJson.name || symbol,
+          price: quoteJson.c,
+          change: quoteJson.d,
+          changePercent: quoteJson.dp,
+          high: quoteJson.h,
+          low: quoteJson.l,
+      };
+      await kv.set(quoteCacheKey, quoteData, { ex: 60 }); // 快取 1 分鐘
     }
 
-    const profileData = await profileResponse.json();
-    const quoteData = await quoteResponse.json();
-    const historyData = await historyResponse.json();
+    // 從 FMP 獲取歷史資料 (若快取中沒有)
+    if (!historyData) {
+      const fmpSymbol = symbol.replace(/\.US$|\.TW$/, '');
+      const historyUrl = `https://financialmodelingprep.com/api/v3/historical-price-full/${fmpSymbol}?apikey=${fmpApiKey}`;
+      const historyResponse = await fetch(historyUrl);
 
-    if (quoteData.c === 0 && !profileData.name) {
-       return response.status(404).json({ error: `找不到 Finnhub 資料: ${symbol}` });
-    }
-    if (historyData['Note']) {
-      return response.status(503).json({ error: '已達到 Alpha Vantage API 請求上限' });
-    }
-    if (!historyData['Time Series (Daily)']) {
-      return response.status(404).json({ error: `找不到 Alpha Vantage 歷史資料: ${symbol}` });
-    }
+      if (!historyResponse.ok) {
+        return response.status(500).json({ error: `從 FMP 獲取歷史資料失敗` });
+      }
+      const historyJson = await historyResponse.json();
 
-    // 將從兩個 API 獲取的資料，整理成我們 App 需要的格式
-    const timeSeries = historyData['Time Series (Daily)'];
-    
-    const processedHistory = Object.entries(timeSeries).slice(0, 60).map(([date, data]) => ({
-      date: date,
-      open: parseFloat(data['1. open']),
-      high: parseFloat(data['2. high']),
-      low: parseFloat(data['3. low']),
-      close: parseFloat(data['4. close']),
-      volume: parseInt(data['5. volume'])
-    }));
+      if (!historyJson.historical || historyJson.historical.length === 0) {
+        return response.status(404).json({ error: `找不到 FMP 歷史資料: ${symbol}` });
+      }
+      
+      historyData = historyJson.historical.slice(0, 60).map(d => ({
+        date: d.date,
+        open: d.open,
+        high: d.high,
+        low: d.low,
+        close: d.close,
+        volume: d.volume
+      }));
+      await kv.set(historyCacheKey, historyData, { ex: 86400 }); // 快取 24 小時
+    }
 
     const processedData = {
       symbol: symbol,
-      name: profileData.name || symbol,
-      price: quoteData.c,
-      change: quoteData.d,
-      changePercent: quoteData.dp,
-      high: quoteData.h,
-      low: quoteData.l,
-      history: processedHistory,
+      ...quoteData,
+      history: historyData,
     };
 
     response.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate');
@@ -103,7 +109,7 @@ async function handleGetStockData(request, response) {
   }
 }
 
-// 處理獲取新聞並翻譯的邏輯
+// 處理獲取新聞並翻譯的邏輯 (使用 Finnhub)
 async function handleGetNews(request, response) {
     try {
         const { symbol } = request.query;
