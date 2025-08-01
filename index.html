@@ -462,7 +462,7 @@ const App = {
             content = `
                 <div class="flex justify-between items-center">
                     <div class="flex items-center gap-2">
-                        <div class="flex bg-slate-700 rounded-lg p-1">
+                        <div class="flex bg-slate-700 rounded-lg p-1 h-9">
                             <button data-market="US" class="market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.watchlistMarketView === 'US' ? 'bg-slate-800 shadow' : ''}">美股</button>
                             <button data-market="TW" class="market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.watchlistMarketView === 'TW' ? 'bg-slate-800 shadow' : ''}">台股</button>
                         </div>
@@ -575,7 +575,7 @@ const App = {
                             <span>低: <span class="text-green-500">${stock.low.toFixed(2)}</span></span>
                             <span>高: <span class="text-red-500">${stock.high.toFixed(2)}</span></span>
                         </div>
-                        <div class="flex flex-wrap gap-x-3 mt-1">
+                        <div class="flex justify-between mt-1">
                             <span>3日線: ${indicators.ma3.toFixed(2)}${stock.price < indicators.ma3 ? '<span class="ma-star"> ★</span>' : ''}</span>
                             <span>5日線: ${indicators.ma5.toFixed(2)}${stock.price < indicators.ma5 ? '<span class="ma-star"> ★</span>' : ''}</span>
                             <span>10日線: ${indicators.ma10.toFixed(2)}${stock.price < indicators.ma10 ? '<span class="ma-star"> ★</span>' : ''}</span>
@@ -696,7 +696,7 @@ const App = {
             return;
         }
         
-        document.getElementById('detail-header-title').textContent = `${stock.name} (${symbol})`;
+        document.getElementById('detail-header-title').textContent = `${symbol.replace(/\.US$|\.TW$/, '')} (${stock.name})`;
         
         detailContainer.innerHTML = `
             <div class="bg-slate-800 p-4 rounded-xl shadow-md mb-4">
@@ -706,9 +706,9 @@ const App = {
                         <p class="text-base mt-1 ${stock.change >= 0 ? (stock.market === 'US' ? 'text-green-500' : 'text-red-500') : (stock.market === 'US' ? 'text-red-500' : 'text-green-500')}">${stock.change >= 0 ? '▲' : '▼'} ${stock.change.toFixed(2)} (${stock.changePercent.toFixed(2)}%)</p>
                     </div>
                     <div class="text-xs text-slate-400 text-right">
-                        <p>當日高: <span class="font-semibold">${stock.high.toFixed(2)}</span></p>
                         <p>當日低: <span class="font-semibold">${stock.low.toFixed(2)}</span></p>
-                        <p>成交量: <span class="font-semibold">${stock.history[0].volume}</span></p>
+                        <p>當日高: <span class="font-semibold">${stock.high.toFixed(2)}</span></p>
+                        <p>成交量: <span class="font-semibold">${parseInt(stock.history[0].volume).toLocaleString('en-US')}</span></p>
                         ${stock.pe ? `<p>本益比: <span class="font-semibold">${stock.pe}</span></p>` : ''}
                     </div>
                 </div>
