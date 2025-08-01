@@ -308,7 +308,6 @@ const App = {
     },
 
     async fetchAllWatchlistData(forceRefresh = false) {
-        // *** FIX: Only show global loader on initial load, not on background refresh ***
         if (!forceRefresh) {
             this.state.isLoading = true;
             this.render();
@@ -548,7 +547,10 @@ const App = {
         return `
             <div class="opportunity-card bg-slate-800 p-4 rounded-lg shadow-sm cursor-pointer active:bg-slate-700" data-symbol="${symbol}">
                 <div class="flex justify-between items-start mb-2">
-                    <p class="font-bold truncate pr-2">${stock.name}</p>
+                    <div>
+                        <p class="font-bold text-base">${stock.name}</p>
+                        <p class="text-xs text-slate-400">${symbol}</p>
+                    </div>
                     <div class="text-right flex items-center flex-shrink-0">
                         <span class="font-semibold text-xs mr-2">力度</span>
                         ${strengthHTML}
