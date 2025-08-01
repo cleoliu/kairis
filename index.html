@@ -561,8 +561,8 @@ const App = {
                 <div class="bg-slate-800 p-4 rounded-xl shadow-sm cursor-pointer active:bg-slate-700" data-symbol="${symbol}">
                     <div class="flex justify-between items-center">
                         <div class="flex-1">
-                            <p class="font-bold text-base">${stock.name}</p>
-                            <p class="text-xs text-slate-400">${symbol}</p>
+                            <p class="font-bold text-base">${symbol.replace(/\.US$|\.TW$/, '')}</p>
+                            <p class="text-xs text-slate-400 truncate">${stock.name}</p>
                         </div>
                         <div class="text-right">
                             <p class="text-lg font-bold ${colorClass}">${stock.currency}${stock.price.toFixed(2)}</p>
@@ -572,14 +572,13 @@ const App = {
                     </div>
                     <div class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-700">
                         <div class="flex justify-between">
-                            <span>高: <span class="text-red-500">${stock.high.toFixed(2)}</span></span>
                             <span>低: <span class="text-green-500">${stock.low.toFixed(2)}</span></span>
+                            <span>高: <span class="text-red-500">${stock.high.toFixed(2)}</span></span>
                         </div>
                         <div class="flex flex-wrap gap-x-3 mt-1">
                             <span>3日線: ${indicators.ma3.toFixed(2)}${stock.price < indicators.ma3 ? '<span class="ma-star"> ★</span>' : ''}</span>
                             <span>5日線: ${indicators.ma5.toFixed(2)}${stock.price < indicators.ma5 ? '<span class="ma-star"> ★</span>' : ''}</span>
                             <span>10日線: ${indicators.ma10.toFixed(2)}${stock.price < indicators.ma10 ? '<span class="ma-star"> ★</span>' : ''}</span>
-                            <span>30日線: ${indicators.ma30.toFixed(2)}${stock.price < indicators.ma30 ? '<span class="ma-star"> ★</span>' : ''}</span>
                         </div>
                     </div>
                 </div>
@@ -663,8 +662,8 @@ const App = {
             <div class="opportunity-card bg-slate-800 p-4 rounded-lg shadow-sm cursor-pointer active:bg-slate-700" data-symbol="${symbol}">
                 <div class="flex justify-between items-start mb-2">
                     <div>
-                        <p class="font-bold text-base">${stock.name}</p>
-                        <p class="text-xs text-slate-400">${symbol}</p>
+                        <p class="font-bold text-base">${symbol.replace(/\.US$|\.TW$/, '')}</p>
+                        <p class="text-xs text-slate-400 truncate">${stock.name}</p>
                     </div>
                     <div class="text-right flex-shrink-0">
                         <p class="font-bold text-base ${colorClass}">${stock.currency}${stock.price.toFixed(2)}</p>
@@ -895,7 +894,7 @@ const App = {
                             <div class="price-range-bar-tick bg-sky-400" style="left: ${tickLeft}%;"></div>
                         </div>
                     </div>
-                    <span class="w-28 text-right font-semibold text-slate-300">${day.low.toFixed(2)}~${day.high.toFixed(2)}</span>
+                    <span class="w-28 text-right font-semibold text-slate-300">$${day.low.toFixed(2)}~${day.high.toFixed(2)}</span>
                 </div>
             `;
         });
