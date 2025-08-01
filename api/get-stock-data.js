@@ -1,12 +1,13 @@
 // Vercel Serverless Function
 // 檔案路徑: /api/get-stock-data.js
 
-// 這個函式現在會處理兩種請求：
-// 1. GET 請求: 混合呼叫 Finnhub (即時報價) 和 Alpha Vantage (歷史資料)。
-// 2. POST 請求: 安全地呼叫 Gemini API 進行 AI 分析。
-
 export default async function handler(request, response) {
+  const { action } = request.query;
+
   if (request.method === 'GET') {
+    if (action === 'get_news') {
+      return handleGetNews(request, response);
+    }
     return handleGetStockData(request, response);
   } else if (request.method === 'POST') {
     return handleGeminiAnalysis(request, response);
@@ -16,7 +17,7 @@ export default async function handler(request, response) {
   }
 }
 
-// 處理獲取股價資料的邏輯
+// 處理從 Finnhub (即時) 和 Alpha Vantage (歷史) 獲取股價資料的邏輯
 async function handleGetStockData(request, response) {
   try {
     const { symbol } = request.query;
@@ -49,10 +50,10 @@ async function handleGetStockData(request, response) {
 
     // 分別處理回傳結果
     if (!profileResponse.ok || !quoteResponse.ok) {
-        return response.status(404).json({ error: `找不到即時報價資料: ${symbol}` });
+        return response.status(404).json({ error: `找不到 Finnhub 即時報價資料: ${symbol}` });
     }
     if (!historyResponse.ok) {
-        return response.status(500).json({ error: `獲取歷史資料失敗` });
+        return response.status(500).json({ error: `從 Alpha Vantage 獲取歷史資料失敗` });
     }
 
     const profileData = await profileResponse.json();
@@ -72,14 +73,14 @@ async function handleGetStockData(request, response) {
     // 將從兩個 API 獲取的資料，整理成我們 App 需要的格式
     const timeSeries = historyData['Time Series (Daily)'];
     
-    const processedHistory = Object.entries(timeSeries).slice(0, 30).map(([date, data]) => ({
+    const processedHistory = Object.entries(timeSeries).slice(0, 60).map(([date, data]) => ({
       date: date,
       open: parseFloat(data['1. open']),
       high: parseFloat(data['2. high']),
       low: parseFloat(data['3. low']),
       close: parseFloat(data['4. close']),
       volume: parseInt(data['5. volume'])
-    })).reverse(); // Alpha Vantage 回傳的是時間降序，我們需要升序後再反轉
+    }));
 
     const processedData = {
       symbol: symbol,
@@ -89,7 +90,7 @@ async function handleGetStockData(request, response) {
       changePercent: quoteData.dp, // Percent change from Finnhub
       high: quoteData.h, // Day's high from Finnhub
       low: quoteData.l, // Day's low from Finnhub
-      history: processedHistory.reverse(), // 將歷史資料反轉為時間降序
+      history: processedHistory,
     };
 
     response.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate');
@@ -100,6 +101,85 @@ async function handleGetStockData(request, response) {
     return response.status(500).json({ error: '伺服器內部發生錯誤' });
   }
 }
+
+// 處理獲取新聞並翻譯的邏輯
+async function handleGetNews(request, response) {
+    try {
+        const { symbol } = request.query;
+        if (!symbol) {
+            return response.status(400).json({ error: '必須提供股票代號' });
+        }
+        const apiSymbol = symbol.replace(/\.US$|\.TW$/, '');
+
+        const finnhubApiKey = process.env.FINNHUB_API_KEY;
+        if (!finnhubApiKey) {
+            return response.status(500).json({ error: 'FINNHUB_API_KEY 未設定' });
+        }
+
+        const today = new Date();
+        const sevenDaysAgo = new Date(today);
+        sevenDaysAgo.setDate(today.getDate() - 7);
+        const toDate = today.toISOString().split('T')[0];
+        const fromDate = sevenDaysAgo.toISOString().split('T')[0];
+
+        const newsUrl = `https://finnhub.io/api/v1/company-news?symbol=${apiSymbol}&from=${fromDate}&to=${toDate}&token=${finnhubApiKey}`;
+        const newsResponse = await fetch(newsUrl);
+
+        if (!newsResponse.ok) {
+            throw new Error(`從 Finnhub 獲取新聞失敗: ${symbol}`);
+        }
+        
+        let newsData = await newsResponse.json();
+        newsData = newsData.slice(0, 5);
+
+        const translatedNews = await Promise.all(newsData.map(async (article) => {
+            if (/[a-zA-Z]/.test(article.headline)) {
+                const translatedHeadline = await translateText(article.headline);
+                return { ...article, headline: translatedHeadline || article.headline };
+            }
+            return article;
+        }));
+
+        response.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
+        return response.status(200).json(translatedNews);
+
+    } catch (error) {
+        console.error('handleGetNews Error:', error);
+        return response.status(500).json({ error: '獲取新聞時發生錯誤' });
+    }
+}
+
+// 呼叫 Gemini 進行翻譯的輔助函式
+async function translateText(textToTranslate) {
+    try {
+        const geminiApiKey = process.env.GEMINI_API_KEY;
+        if (!geminiApiKey) {
+            console.error('GEMINI_API_KEY 未設定，無法翻譯');
+            return null;
+        }
+        const prompt = `Translate the following English headline into Traditional Chinese:\n\n"${textToTranslate}"`;
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${geminiApiKey}`;
+        const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+
+        const geminiResponse = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!geminiResponse.ok) return null;
+
+        const result = await geminiResponse.json();
+        if (result.candidates?.[0]?.content?.parts?.[0]) {
+            return result.candidates[0].content.parts[0].text.replace(/"/g, '');
+        }
+        return null;
+    } catch (error) {
+        console.error('Translate Error:', error);
+        return null;
+    }
+}
+
 
 // 處理呼叫 Gemini API 進行 AI 分析的邏輯
 async function handleGeminiAnalysis(request, response) {

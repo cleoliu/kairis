@@ -683,31 +683,70 @@ const App = {
         `;
     },
 
-    getNewsContentHTML(symbol) {
+    async renderNews(symbol) {
+        const tabContainer = document.getElementById('detail-tab-content');
+        tabContainer.innerHTML = `<div class="bg-slate-800 p-4 rounded-xl shadow-md"><div class="loader mx-auto"></div></div>`;
+
+        try {
+            const response = await fetch(`/api/get-stock-data?action=get_news&symbol=${symbol}`);
+            const newsData = await response.json();
+
+            if (!response.ok) {
+                throw new Error(newsData.error || '獲取新聞失敗');
+            }
+
+            tabContainer.innerHTML = this.getNewsContentHTML(symbol, newsData);
+        } catch (error) {
+            tabContainer.innerHTML = `<div class="bg-slate-800 p-4 rounded-xl shadow-md"><p class="text-red-500 text-center">${error.message}</p></div>`;
+        }
+    },
+
+    getNewsContentHTML(symbol, newsItems) {
         const stock = this.state.stockDataCache[symbol];
-        const newsItems = [
-            { title: `${stock.name} 發布最新財報，營收超出預期`, source: '財經日報', time: '2小時前' },
-            { title: `分析師看好 ${stock.name} 未來發展，上調目標價`, source: '股市前線', time: '8小時前' },
-            { title: `市場傳聞：${stock.name} 將推出革命性新產品`, source: '科技新報', time: '1天前' },
-            { title: `全球供應鏈緊張，${stock.name} 是否受到影響？`, source: '國際經濟', time: '2天前' },
-        ];
+        
+        let newsListHTML = '';
+        if (newsItems && newsItems.length > 0) {
+            newsListHTML = newsItems.map(item => {
+                const date = new Date(item.datetime * 1000);
+                const timeAgo = this.formatTimeAgo(date);
+                return `
+                    <a href="${item.url}" target="_blank" rel="noopener noreferrer" class="block border-b border-slate-700 pb-3 last:border-b-0 hover:bg-slate-700 -mx-4 px-4 py-2 rounded-lg">
+                        <h4 class="font-semibold text-base">${item.headline}</h4>
+                        <div class="text-xs text-slate-400 mt-1 flex justify-between">
+                            <span>${item.source}</span>
+                            <span>${timeAgo}</span>
+                        </div>
+                    </a>
+                `;
+            }).join('');
+        } else {
+            newsListHTML = `<p class="text-slate-400 text-center">找不到相關新聞。</p>`;
+        }
         
         return `
             <div class="bg-slate-800 p-4 rounded-xl shadow-md">
                 <h3 class="text-lg font-bold mb-3">市場新聞與資訊</h3>
-                <div class="space-y-4">
-                    ${newsItems.map(item => `
-                        <div class="border-b border-slate-700 pb-3">
-                            <h4 class="font-semibold text-base">${item.title}</h4>
-                            <div class="text-xs text-slate-400 mt-1 flex justify-between">
-                                <span>${item.source}</span>
-                                <span>${item.time}</span>
-                            </div>
-                        </div>
-                    `).join('')}
+                <div class="space-y-2">
+                    ${newsListHTML}
                 </div>
             </div>
         `;
+    },
+
+    formatTimeAgo(date) {
+        const now = new Date();
+        const seconds = Math.floor((now - date) / 1000);
+        let interval = seconds / 31536000;
+        if (interval > 1) return Math.floor(interval) + " 年前";
+        interval = seconds / 2592000;
+        if (interval > 1) return Math.floor(interval) + " 個月前";
+        interval = seconds / 86400;
+        if (interval > 1) return Math.floor(interval) + " 天前";
+        interval = seconds / 3600;
+        if (interval > 1) return Math.floor(interval) + " 小時前";
+        interval = seconds / 60;
+        if (interval > 1) return Math.floor(interval) + " 分鐘前";
+        return "剛剛";
     },
     
     render7DayPriceVisual(symbol) {
