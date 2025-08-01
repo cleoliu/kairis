@@ -173,6 +173,18 @@
         </div>
     </div>
 
+    <!-- Confirm Remove Modal -->
+    <div id="confirm-remove-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 p-4">
+        <div class="bg-slate-800 rounded-lg p-6 w-full max-w-sm">
+            <h3 class="text-xl font-bold mb-4">確認刪除</h3>
+            <p id="remove-stock-prompt" class="text-slate-300 mb-6"></p>
+            <div class="flex gap-2">
+                 <button id="confirm-remove-btn" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">確定</button>
+                 <button id="cancel-remove-btn" class="flex-1 bg-slate-600 hover:bg-slate-500 text-slate-200 font-bold py-2 px-4 rounded-lg">取消</button>
+            </div>
+        </div>
+    </div>
+
 
 <script>
 // *** START: Firebase Integration ***
@@ -194,6 +206,7 @@ const App = {
         scannerMarketView: 'US',
         watchlist: [], 
         selectedStock: null,
+        stockToRemove: null, // 新增：待刪除的股票
         detailViewTab: 'analysis',
         chartTimeframe: 'D',
         previousView: 'watchlist',
@@ -339,6 +352,9 @@ const App = {
         document.getElementById('back-btn').addEventListener('click', () => this.closeDetailView());
         document.getElementById('close-modal-btn').addEventListener('click', () => this.toggleModal(false));
         document.getElementById('modal-add-btn').addEventListener('click', () => this.addStockFromInput());
+        // 新增：刪除確認框的事件監聽
+        document.getElementById('cancel-remove-btn').addEventListener('click', () => this.toggleRemoveModal(false));
+        document.getElementById('confirm-remove-btn').addEventListener('click', () => this.confirmRemoveStock());
     },
 
     navigate(view) {
@@ -449,7 +465,7 @@ const App = {
                             <p class="text-lg font-bold ${colorClass}">${stock.currency}${stock.price.toFixed(2)}</p>
                             <p class="text-sm ${colorClass}">${isUp ? '▲' : '▼'} ${stock.change.toFixed(2)} (${stock.changePercent.toFixed(2)}%)</p>
                         </div>
-                        <button class="remove-stock-btn text-slate-600 hover:text-red-500 text-2xl ml-3 w-8 h-8 flex items-center justify-center">×</button>
+                        <button class="remove-stock-btn text-slate-600 hover:text-red-500 text-2xl ml-3 w-8 h-8 flex items-center justify-center" data-symbol="${symbol}">×</button>
                     </div>
                     <div class="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-700">
                         <div class="flex justify-between">
@@ -477,7 +493,7 @@ const App = {
         document.querySelectorAll('.remove-stock-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                this.removeStock(btn.dataset.symbol);
+                this.promptRemoveStock(btn.dataset.symbol);
             });
         });
     },
@@ -984,6 +1000,8 @@ const App = {
         
         if (stockData.error) {
             feedbackEl.textContent = `新增失敗: ${stockData.error}`;
+            addButton.disabled = false;
+            addButton.textContent = '新增';
         } else {
             const newWatchlist = [symbol, ...this.state.watchlist];
             if (this.state.userId) { // Firebase mode
@@ -996,13 +1014,34 @@ const App = {
                 this.render();
                 this.toggleModal(false);
             }
+            addButton.disabled = false;
+            addButton.textContent = '新增';
         }
-
-        addButton.disabled = false;
-        addButton.textContent = '新增';
     },
 
-    removeStock(symbol) {
+    promptRemoveStock(symbol) {
+        this.state.stockToRemove = symbol;
+        const stockName = this.state.stockDataCache[symbol]?.name || symbol;
+        document.getElementById('remove-stock-prompt').innerHTML = `確定要從自選清單中移除 <strong class="text-sky-400">${stockName}</strong> 嗎？`;
+        this.toggleRemoveModal(true);
+    },
+
+    toggleRemoveModal(show) {
+        const modal = document.getElementById('confirm-remove-modal');
+        if (show) {
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        } else {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            this.state.stockToRemove = null;
+        }
+    },
+    
+    confirmRemoveStock() {
+        const symbol = this.state.stockToRemove;
+        if (!symbol) return;
+
         const newWatchlist = this.state.watchlist.filter(s => s !== symbol);
         if (this.state.userId) { // Firebase mode
             this.state.db.collection('users').doc(this.state.userId).set({ watchlist: newWatchlist })
@@ -1012,6 +1051,7 @@ const App = {
             this.saveWatchlistToLocalStorage();
             this.render();
         }
+        this.toggleRemoveModal(false);
     },
 
     calculateIndicators(stockData) {
