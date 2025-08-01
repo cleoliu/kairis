@@ -86,7 +86,6 @@
             width: 100%;
             height: 300px;
         }
-        /* *** NEW: CSS for truncating text to 2 lines *** */
         .line-clamp-2 {
             display: -webkit-box;
             -webkit-line-clamp: 2;
@@ -553,10 +552,12 @@ const App = {
             const color = i < signalData.score ? 'bg-yellow-400' : 'bg-slate-600';
             strengthHTML += `<span class="strength-dot ${color}"></span>`;
         }
+        
+        const reasonsHTML = signalData.reasons.map(reason => `<li class="text-xs">${reason}</li>`).join('');
 
         return `
             <div class="opportunity-card bg-slate-800 p-4 rounded-lg shadow-sm cursor-pointer active:bg-slate-700" data-symbol="${symbol}">
-                <div class="flex justify-between items-start mb-2">
+                <div class="flex justify-between items-start">
                     <div>
                         <p class="font-bold text-base">${stock.name}</p>
                         <p class="text-xs text-slate-400">${symbol}</p>
@@ -566,12 +567,17 @@ const App = {
                         ${strengthHTML}
                     </div>
                 </div>
-                <div class="flex justify-between items-end text-sm mt-2 pt-2 border-t border-slate-700">
+                <div class="flex justify-between items-end mt-3 pt-3 border-t border-slate-700">
+                    <div class="text-left">
+                        <p class="font-semibold text-slate-400 text-xs mb-1">判斷原因:</p>
+                        <ul class="list-disc list-inside space-y-1 text-slate-300">
+                            ${reasonsHTML}
+                        </ul>
+                    </div>
                     <div class="text-right flex-shrink-0">
                         <p class="font-bold text-base ${colorClass}">${stock.currency}${stock.price.toFixed(2)}</p>
                         <p class="text-sm ${colorClass}">${isUp ? '▲' : '▼'} ${stock.change.toFixed(2)} (${stock.changePercent.toFixed(2)}%)</p>
                     </div>
-                    <p class="text-slate-400 text-right pl-2">${signalData.reasons[0]}</p>
                 </div>
             </div>
         `;
