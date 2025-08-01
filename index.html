@@ -352,7 +352,6 @@ const App = {
         document.getElementById('back-btn').addEventListener('click', () => this.closeDetailView());
         document.getElementById('close-modal-btn').addEventListener('click', () => this.toggleModal(false));
         document.getElementById('modal-add-btn').addEventListener('click', () => this.addStockFromInput());
-        // 新增：刪除確認框的事件監聽
         document.getElementById('cancel-remove-btn').addEventListener('click', () => this.toggleRemoveModal(false));
         document.getElementById('confirm-remove-btn').addEventListener('click', () => this.confirmRemoveStock());
     },
