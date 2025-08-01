@@ -43,6 +43,8 @@
         }
         main {
             transition: transform 0.3s ease;
+            height: calc(100vh - 65px - 64px); /* Full height minus header and bottom nav */
+            overflow-y: auto;
         }
         #pull-to-refresh-indicator {
             position: absolute;
@@ -384,13 +386,13 @@ const App = {
         const refreshThreshold = 80;
 
         appEl.addEventListener('touchstart', (e) => {
-            if (document.documentElement.scrollTop === 0 && this.state.currentView !== 'detail') {
+            if (appEl.scrollTop === 0 && this.state.currentView !== 'detail') {
                 startY = e.touches[0].pageY;
             }
         }, { passive: true });
 
         appEl.addEventListener('touchmove', (e) => {
-            if (document.documentElement.scrollTop === 0 && startY > 0) {
+            if (appEl.scrollTop === 0 && startY > 0) {
                 const currentY = e.touches[0].pageY;
                 pullDistance = currentY - startY;
                 if (pullDistance > 0) {
