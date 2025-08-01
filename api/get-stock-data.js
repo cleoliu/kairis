@@ -5,6 +5,7 @@ export default async function handler(request, response) {
   const { action } = request.query;
 
   if (request.method === 'GET') {
+    // 根據 'action' 參數決定是獲取股價還是新聞
     if (action === 'get_news') {
       return handleGetNews(request, response);
     }
@@ -85,11 +86,11 @@ async function handleGetStockData(request, response) {
     const processedData = {
       symbol: symbol,
       name: profileData.name || symbol,
-      price: quoteData.c, // Current price from Finnhub
-      change: quoteData.d, // Change from Finnhub
-      changePercent: quoteData.dp, // Percent change from Finnhub
-      high: quoteData.h, // Day's high from Finnhub
-      low: quoteData.l, // Day's low from Finnhub
+      price: quoteData.c,
+      change: quoteData.d,
+      changePercent: quoteData.dp,
+      high: quoteData.h,
+      low: quoteData.l,
       history: processedHistory,
     };
 
@@ -157,7 +158,7 @@ async function translateText(textToTranslate) {
             console.error('GEMINI_API_KEY 未設定，無法翻譯');
             return null;
         }
-        const prompt = `Translate the following English headline into Traditional Chinese:\n\n"${textToTranslate}"`;
+        const prompt = `Translate the following English headline to Traditional Chinese. Provide ONLY the translated text, without any original text, quotation marks, or explanations. Headline: "${textToTranslate}"`;
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${geminiApiKey}`;
         const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
 
