@@ -188,6 +188,7 @@ const App = {
         watchlist: [], 
         selectedStock: null,
         detailViewTab: 'analysis',
+        chartTimeframe: 'D', // 'D' for Daily, 'W' for Weekly
         previousView: 'watchlist',
         isGeminiLoading: false,
         lastUpdated: null,
@@ -621,8 +622,10 @@ const App = {
                 document.getElementById('gemini-analysis-btn').addEventListener('click', () => this.handleGeminiAnalysis(symbol));
                 break;
             case 'chart':
-                tabContainer.innerHTML = this.getChartContentHTML();
+                tabContainer.innerHTML = this.getChartContentHTML(symbol);
                 this.renderAdvancedChart(symbol);
+                document.querySelectorAll('.chart-timeframe-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
                         this.state.chartTimeframe = e.currentTarget.dataset.timeframe;
                         this.renderDetailTabContent(symbol);
                     });
@@ -741,6 +744,7 @@ const App = {
         return html;
     },
 
+    calculateWeeklyData(dailyHistory) {
         if (!dailyHistory || dailyHistory.length < 1) return [];
 
         const weeklyMap = new Map();
