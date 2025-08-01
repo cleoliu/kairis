@@ -194,6 +194,7 @@ const App = {
         lastUpdated: null,
         advancedChartInstance: null,
         stockDataCache: {},
+        newsCache: {}, // 新增：新聞快取
         isLoading: false,
         db: null,
         auth: null,
@@ -632,7 +633,7 @@ const App = {
                 });
                 break;
             case 'news':
-                tabContainer.innerHTML = this.getNewsContentHTML(symbol);
+                this.renderNews(symbol);
                 break;
         }
     },
