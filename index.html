@@ -1056,8 +1056,6 @@ const App = {
 
     calculateIndicators(stockData) {
         const history = stockData.history;
-        if (!history || history.length < 30) return { ma3: 0, ma5: 0, ma10: 0, ma20: 0, ma30: 0, rsi: 50, bb: { upper: 0, middle: 0, lower: 0 }, high30: 0, low30: 0, avgVol5: 0 };
-        const closes = history.map(d => d.close);
         if (!history || history.length < 35) return { ma3: 0, ma5: 0, ma10: 0, ma20: 0, ma30: 0, rsi: 50, bb: { upper: 0, middle: 0, lower: 0 }, macd: { macd: 0, signal: 0, histogram: 0 }, high30: 0, low30: 0, avgVol5: 0 };
         const closes = history.map(d => d.close).reverse(); // Oldest to newest
         const volumes = history.map(d => d.volume).reverse();
