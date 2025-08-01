@@ -39,6 +39,21 @@
             min-height: 100vh;
             box-shadow: 0 0 20px rgba(0,0,0,0.1);
             padding-bottom: 80px; /* Space for bottom nav */
+            overflow: hidden; /* Prevent body scroll during pull */
+        }
+        main {
+            transition: transform 0.3s ease;
+        }
+        #pull-to-refresh-indicator {
+            position: absolute;
+            top: -50px;
+            left: 0;
+            right: 0;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 5;
         }
         .strength-dot {
             height: 10px;
@@ -103,7 +118,10 @@
              <!-- Header content is injected by JS -->
         </header>
 
-        <main class="p-4">
+        <main class="p-4 relative">
+             <div id="pull-to-refresh-indicator">
+                <div class="loader !w-6 !h-6 !border-4"></div>
+            </div>
             <!-- Watchlist View -->
             <div id="view-watchlist" class="view">
                 <p id="watchlist-last-updated" class="text-xs text-slate-500 text-right mb-2"></p>
@@ -224,6 +242,7 @@ const App = {
 
     async init() {
         this.setupEventListeners();
+        this.setupPullToRefresh();
         this.updateTime();
         await this.initFirebase();
         setInterval(() => {
@@ -354,6 +373,42 @@ const App = {
         document.getElementById('modal-add-btn').addEventListener('click', () => this.addStockFromInput());
         document.getElementById('cancel-remove-btn').addEventListener('click', () => this.toggleRemoveModal(false));
         document.getElementById('confirm-remove-btn').addEventListener('click', () => this.confirmRemoveStock());
+    },
+
+    setupPullToRefresh() {
+        const mainEl = document.querySelector('main');
+        let startY = 0;
+        let pullDistance = 0;
+        const refreshThreshold = 80;
+
+        mainEl.addEventListener('touchstart', (e) => {
+            if (document.documentElement.scrollTop === 0) {
+                startY = e.touches[0].pageY;
+            }
+        }, { passive: true });
+
+        mainEl.addEventListener('touchmove', (e) => {
+            if (document.documentElement.scrollTop === 0 && startY > 0) {
+                const currentY = e.touches[0].pageY;
+                pullDistance = currentY - startY;
+                if (pullDistance > 0) {
+                    e.preventDefault();
+                    mainEl.style.transform = `translateY(${Math.min(pullDistance, refreshThreshold * 1.5)}px)`;
+                }
+            }
+        }, { passive: false });
+
+        mainEl.addEventListener('touchend', async () => {
+            if (pullDistance > refreshThreshold) {
+                mainEl.style.transform = `translateY(50px)`;
+                await this.fetchAllWatchlistData(true);
+                mainEl.style.transform = 'translateY(0px)';
+            } else {
+                mainEl.style.transform = 'translateY(0px)';
+            }
+            startY = 0;
+            pullDistance = 0;
+        });
     },
 
     navigate(view) {
