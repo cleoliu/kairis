@@ -10,7 +10,7 @@
     <!-- Visualization & Content Choices: 
         - [Stock List]: Goal: Inform/Compare. Method: A single-column list of cards. Now includes key indicators (High, Low, MAs) with a conditional star '★' to indicate when price is below a MA. Interaction: Click to navigate to detail view. Justification: The star provides an immediate visual cue for potential weakness.
         - [Detail Page Tabs]: Goal: Organize. Method: A new sub-tab navigation for Analysis, Chart, and News. Justification: Organizes a growing amount of information on the detail page into logical sections, preventing cognitive overload.
-        - [Advanced Chart]: Goal: Analyze Change. Method: Upgraded to a Chart.js Candlestick chart using a financial plugin, showing 30-day OHLC data. Interaction: Hover/touch for tooltips with full OHLC info. Justification: Fulfills user request for a more professional K-line chart.
+        - [Advanced Chart]: Goal: Analyze Change. Method: Upgraded to a Chart.js Candlestick chart using a financial plugin, showing 30-day OHLC data. Now includes Daily/Weekly timeframe switching. Interaction: Hover/touch for tooltips with full OHLC info, click to switch timeframe. Justification: Fulfills user request for a more professional K-line chart with multiple timeframes.
         - [News Feed]: Goal: Inform. Method: A list of mock news articles. Justification: Adds a qualitative, event-driven context to the quantitative data.
         - [7-Day Price Visual]: Goal: Analyze Change/Compare. Method: Custom HTML/CSS visualization. Displays the full high-low range as text. Interaction: Static display. Justification: Implements user's visual preference.
         - [Scanner]: Goal: Organize/Discover. Method: Single-column list of cards. Now tabbed by market (TW/US). Layout adjusted to prioritize price info over the reason. Interaction: Click to navigate to detail view. Justification: Aligns with user workflow of seeing price first and filtering by market.
@@ -136,7 +136,7 @@
             <h2 id="detail-header-title" class="text-lg font-bold truncate">個股詳情</h2>
         </header>
         <div id="detail-content-wrapper" class="overflow-y-auto h-[calc(100vh-65px)]">
-             <div id="detail-content">
+             <div id="detail-content" class="p-4">
                 <!-- Detail content will be injected here -->
             </div>
         </div>
@@ -623,6 +623,10 @@ const App = {
             case 'chart':
                 tabContainer.innerHTML = this.getChartContentHTML();
                 this.renderAdvancedChart(symbol);
+                        this.state.chartTimeframe = e.currentTarget.dataset.timeframe;
+                        this.renderDetailTabContent(symbol);
+                    });
+                });
                 break;
             case 'news':
                 tabContainer.innerHTML = this.getNewsContentHTML(symbol);
@@ -662,7 +666,13 @@ const App = {
     getChartContentHTML() {
         return `
             <div class="bg-slate-800 p-4 rounded-xl shadow-md">
-                <h3 class="text-lg font-bold mb-3">30日 K 線圖</h3>
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-lg font-bold">K 線圖</h3>
+                    <div class="flex bg-slate-700 rounded-lg p-1">
+                        <button data-timeframe="D" class="chart-timeframe-btn px-3 py-1 text-xs font-semibold rounded-md ${this.state.chartTimeframe === 'D' ? 'bg-slate-800 shadow' : ''}">日線</button>
+                        <button data-timeframe="W" class="chart-timeframe-btn px-3 py-1 text-xs font-semibold rounded-md ${this.state.chartTimeframe === 'W' ? 'bg-slate-800 shadow' : ''}">週線</button>
+                    </div>
+                </div>
                 <div class="advanced-chart-container">
                     <canvas id="advanced-chart"></canvas>
                 </div>
@@ -731,14 +741,56 @@ const App = {
         return html;
     },
 
+        if (!dailyHistory || dailyHistory.length < 1) return [];
+
+        const weeklyMap = new Map();
+        [...dailyHistory].reverse().forEach(day => {
+            const date = new Date(day.date);
+            const weekStartDate = new Date(date);
+            weekStartDate.setDate(date.getDate() - date.getDay());
+            const weekKey = weekStartDate.toISOString().split('T')[0];
+
+            if (!weeklyMap.has(weekKey)) {
+                weeklyMap.set(weekKey, {
+                    open: day.open,
+                    high: day.high,
+                    low: day.low,
+                    close: day.close,
+                    volume: day.volume,
+                    date: weekKey
+                });
+            } else {
+                const week = weeklyMap.get(weekKey);
+                week.high = Math.max(week.high, day.high);
+                week.low = Math.min(week.low, day.low);
+                week.close = day.close;
+                week.volume += day.volume;
+            }
+        });
+
+        return Array.from(weeklyMap.values()).reverse();
+    },
+
     renderAdvancedChart(symbol) {
         if (this.state.advancedChartInstance) {
             this.state.advancedChartInstance.destroy();
         }
-        const history = this.state.stockDataCache[symbol].history.slice(0, 30).reverse();
+        
+        const history = this.state.stockDataCache[symbol].history;
+        let chartData;
+        let timeUnit;
+
+        if (this.state.chartTimeframe === 'W') {
+            chartData = this.calculateWeeklyData(history);
+            timeUnit = 'week';
+        } else {
+            chartData = history.slice(0, 30).reverse();
+            timeUnit = 'day';
+        }
+
         const ctx = document.getElementById('advanced-chart').getContext('2d');
         
-        const data = history.map(d => ({
+        const data = chartData.map(d => ({
             x: new Date(d.date).getTime(),
             o: d.open,
             h: d.high,
@@ -765,7 +817,7 @@ const App = {
                 scales: {
                     x: {
                         type: 'time',
-                        time: { unit: 'day' },
+                        time: { unit: timeUnit },
                         grid: { color: 'rgba(71, 85, 105, 0.5)' },
                         ticks: { color: '#94a3b8' }
                     },
@@ -801,7 +853,8 @@ const App = {
     selectStock(symbol) {
         this.state.previousView = this.state.currentView;
         this.state.selectedStock = symbol;
-        this.state.detailViewTab = 'analysis'; // Reset to default tab
+        this.state.detailViewTab = 'analysis';
+        this.state.chartTimeframe = 'D'; // Reset to daily view
         this.renderDetail(symbol);
         const detailView = document.getElementById('view-detail');
         detailView.classList.remove('hidden');
