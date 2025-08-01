@@ -237,6 +237,7 @@ const App = {
         db: null,
         auth: null,
         userId: null,
+        user: null,
         watchlistUnsubscribe: null,
     },
 
@@ -266,6 +267,7 @@ const App = {
             this.state.auth = firebase.auth();
 
             this.state.auth.onAuthStateChanged(user => {
+                this.state.user = user;
                 if (user) {
                     this.state.userId = user.uid;
                     this.loadWatchlistFromFirestore();
@@ -275,6 +277,7 @@ const App = {
                         this.loadWatchlistFromLocalStorage();
                     });
                 }
+                this.renderHeader();
             });
         } catch (error) {
             console.error("Firebase 初始化失敗:", error);
@@ -377,17 +380,18 @@ const App = {
 
     setupPullToRefresh() {
         const mainEl = document.querySelector('main');
+        const appEl = document.getElementById('app');
         let startY = 0;
         let pullDistance = 0;
         const refreshThreshold = 80;
 
-        mainEl.addEventListener('touchstart', (e) => {
-            if (document.documentElement.scrollTop === 0) {
+        appEl.addEventListener('touchstart', (e) => {
+            if (document.documentElement.scrollTop === 0 && this.state.currentView !== 'detail') {
                 startY = e.touches[0].pageY;
             }
         }, { passive: true });
 
-        mainEl.addEventListener('touchmove', (e) => {
+        appEl.addEventListener('touchmove', (e) => {
             if (document.documentElement.scrollTop === 0 && startY > 0) {
                 const currentY = e.touches[0].pageY;
                 pullDistance = currentY - startY;
@@ -398,7 +402,7 @@ const App = {
             }
         }, { passive: false });
 
-        mainEl.addEventListener('touchend', async () => {
+        appEl.addEventListener('touchend', async () => {
             if (pullDistance > refreshThreshold) {
                 mainEl.style.transform = `translateY(50px)`;
                 await this.fetchAllWatchlistData(true);
@@ -444,6 +448,18 @@ const App = {
         const header = document.getElementById('main-header');
         let content = '';
 
+        let authContent = '';
+        if (this.state.user && !this.state.user.isAnonymous) {
+            authContent = `
+                <div class="flex items-center gap-2">
+                    <img src="${this.state.user.photoURL}" alt="User" class="w-8 h-8 rounded-full">
+                    <button id="logout-btn" class="text-xs text-slate-400 hover:text-white">登出</button>
+                </div>
+            `;
+        } else {
+            authContent = `<button id="login-btn" class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-3 rounded-lg transition-colors text-sm">使用 Google 登入</button>`;
+        }
+
         if (this.state.currentView === 'watchlist') {
             content = `
                 <div class="flex justify-between items-center">
@@ -451,13 +467,22 @@ const App = {
                         <button data-market="US" class="market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.watchlistMarketView === 'US' ? 'bg-slate-800 shadow' : ''}">美股</button>
                         <button data-market="TW" class="market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.watchlistMarketView === 'TW' ? 'bg-slate-800 shadow' : ''}">台股</button>
                     </div>
-                    <button id="add-stock-btn" class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-3 rounded-lg transition-colors text-lg">+</button>
+                    <div class="flex items-center gap-2">
+                        ${authContent}
+                        <button id="add-stock-btn" class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-3 rounded-lg transition-colors text-lg">+</button>
+                    </div>
                 </div>
             `;
         } else if (this.state.currentView === 'scanner') {
-            content = `<h2 class="text-xl font-bold text-center flex-1">機會掃描</h2>`;
+            content = `<div class="flex justify-between items-center"><h2 class="text-xl font-bold text-center flex-1">機會掃描</h2>${authContent}</div>`;
         }
         header.innerHTML = content;
+
+        if (this.state.user && !this.state.user.isAnonymous) {
+            document.getElementById('logout-btn').addEventListener('click', () => this.handleLogout());
+        } else {
+            document.getElementById('login-btn').addEventListener('click', () => this.handleGoogleLogin());
+        }
 
         if (this.state.currentView === 'watchlist') {
             document.getElementById('add-stock-btn').addEventListener('click', () => this.toggleModal(true));
@@ -468,6 +493,17 @@ const App = {
                 });
             });
         }
+    },
+
+    handleGoogleLogin() {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        this.state.auth.signInWithPopup(provider).catch(error => {
+            console.error("Google 登入失敗:", error);
+        });
+    },
+
+    handleLogout() {
+        this.state.auth.signOut();
     },
 
     renderWatchlist() {
