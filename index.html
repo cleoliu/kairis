@@ -308,8 +308,11 @@ const App = {
     },
 
     async fetchAllWatchlistData(forceRefresh = false) {
-        this.state.isLoading = true;
-        this.render();
+        // *** FIX: Only show global loader on initial load, not on background refresh ***
+        if (!forceRefresh) {
+            this.state.isLoading = true;
+            this.render();
+        }
 
         const symbolsToFetch = this.state.watchlist.filter(symbol => !this.state.stockDataCache[symbol] || forceRefresh);
         
