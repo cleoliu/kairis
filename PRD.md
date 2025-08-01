@@ -90,7 +90,7 @@
 - **資料庫**: Google [Firebase](https://www.google.com/search?q=https://console.firebase.google.com/u/0/project/stockwise-ad5e9/overview) (Firestore) 用於儲存使用者自選股，並支援匿名登入。
 - **API 組合**:
   - [Finnhub](https://finnhub.io/): 用於獲取美股即時報價與公司新聞。
-  - [Alpha Vantage](https://www.alphavantage.co/documentation/): 用於獲取穩定的每日歷史 K 線數據。
+  - [Financial Modeling Prep](https://site.financialmodelingprep.com/developer/docs/dashboard): 用於獲取穩定的每日歷史 K 線數據。
   - [Gemini API](https://aistudio.google.com/apikey): 用於 AI 智慧解讀與新聞標題翻譯。
 - **部署**: 程式碼託管於 [GitHub](https://www.google.com/search?q=https://github.com/cleoliu/StockWise)，並透過 Vercel 進行自動化部署。
 
@@ -104,7 +104,7 @@
 - [Vercel](https://vercel.com/)
 - [Google Firebase](https://firebase.google.com/)
 - [Finnhub](https://finnhub.io/)
-- [Alpha Vantage](https://www.alphavantage.co/)
+- [Financial Modeling Prep](https://site.financialmodelingprep.com/)
 - [Google AI Studio (for Gemini API)](https://aistudio.google.com/)
 
 #### 2. 專案設定
