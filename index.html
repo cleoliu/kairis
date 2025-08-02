@@ -43,7 +43,7 @@
         }
         main {
             transition: transform 0.3s ease;
-            height: calc(100vh - 65px - 64px); /* Full height minus header and bottom nav */
+            height: calc(100vh - 65px); /* Full height minus header */
             overflow-y: auto;
         }
         #pull-to-refresh-indicator {
@@ -380,29 +380,27 @@ const App = {
 
     setupPullToRefresh() {
         const mainEl = document.querySelector('main');
-        const appEl = document.getElementById('app');
         let startY = 0;
         let pullDistance = 0;
         const refreshThreshold = 80;
 
-        appEl.addEventListener('touchstart', (e) => {
-            if (appEl.scrollTop === 0 && this.state.currentView !== 'detail') {
+        mainEl.addEventListener('touchstart', (e) => {
+            if (mainEl.scrollTop === 0 && this.state.currentView !== 'detail') {
                 startY = e.touches[0].pageY;
             }
         }, { passive: true });
 
-        appEl.addEventListener('touchmove', (e) => {
-            if (appEl.scrollTop === 0 && startY > 0) {
+        mainEl.addEventListener('touchmove', (e) => {
+            if (mainEl.scrollTop === 0 && startY > 0) {
                 const currentY = e.touches[0].pageY;
                 pullDistance = currentY - startY;
                 if (pullDistance > 0) {
-                    e.preventDefault();
                     mainEl.style.transform = `translateY(${Math.min(pullDistance, refreshThreshold * 1.5)}px)`;
                 }
             }
-        }, { passive: false });
+        }, { passive: true });
 
-        appEl.addEventListener('touchend', async () => {
+        mainEl.addEventListener('touchend', async () => {
             if (pullDistance > refreshThreshold) {
                 mainEl.style.transform = `translateY(50px)`;
                 await this.fetchAllWatchlistData(true);
@@ -562,11 +560,11 @@ const App = {
             const card = `
                 <div class="bg-slate-800 p-4 rounded-xl shadow-sm cursor-pointer active:bg-slate-700" data-symbol="${symbol}">
                     <div class="flex justify-between items-center">
-                        <div class="flex-1">
-                            <p class="font-bold text-base">${symbol.replace(/\.US$|\.TW$/, '')}</p>
+                        <div class="flex-1 min-w-0">
+                            <p class="font-bold text-base truncate">${symbol.replace(/\.US$|\.TW$/, '')}</p>
                             <p class="text-xs text-slate-400 truncate">${stock.name}</p>
                         </div>
-                        <div class="text-right">
+                        <div class="text-right pl-2">
                             <p class="text-lg font-bold ${colorClass}">${stock.currency}${stock.price.toFixed(2)}</p>
                             <p class="text-sm ${colorClass}">${isUp ? '▲' : '▼'} ${stock.change.toFixed(2)} (${stock.changePercent.toFixed(2)}%)</p>
                         </div>
@@ -663,11 +661,11 @@ const App = {
         return `
             <div class="opportunity-card bg-slate-800 p-4 rounded-lg shadow-sm cursor-pointer active:bg-slate-700" data-symbol="${symbol}">
                 <div class="flex justify-between items-start mb-2">
-                    <div>
-                        <p class="font-bold text-base">${symbol.replace(/\.US$|\.TW$/, '')}</p>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-bold text-base truncate">${symbol.replace(/\.US$|\.TW$/, '')}</p>
                         <p class="text-xs text-slate-400 truncate">${stock.name}</p>
                     </div>
-                    <div class="text-right flex-shrink-0">
+                    <div class="text-right flex-shrink-0 pl-2">
                         <p class="font-bold text-base ${colorClass}">${stock.currency}${stock.price.toFixed(2)}</p>
                         <p class="text-sm ${colorClass}">${isUp ? '▲' : '▼'} ${stock.change.toFixed(2)} (${stock.changePercent.toFixed(2)}%)</p>
                     </div>
