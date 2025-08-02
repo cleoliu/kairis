@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Kairis</title>
-    <link rel="icon" href="/logo.png">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/icons/icon-192x192.png">
     <!-- Chosen Palette: Warm Neutrals (Slate & Sky) - Dark Mode -->
     <!-- Application Structure Plan: A mobile-first SPA with a fixed bottom tab bar for primary navigation between "Watchlist" and "Scanner". The "Detail" view is now a separate, full-screen view that appears on top of the current view, with a dedicated back button, which is a standard mobile UI pattern. The watchlist itself is now sub-tabbed for "TW" and "US" markets. This architecture prioritizes mobile ergonomics, one-handed operation, and clear information separation. -->
     <!-- Visualization & Content Choices: 
@@ -1269,6 +1270,17 @@ const App = {
 };
 
 document.addEventListener('DOMContentLoaded', () => App.init());
+
+// 註冊 Service Worker
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').then(registration => {
+      console.log('ServiceWorker registration successful with scope: ', registration.scope);
+    }, err => {
+      console.log('ServiceWorker registration failed: ', err);
+    });
+  });
+}
 </script>
 
 </body>
