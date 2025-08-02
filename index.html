@@ -39,6 +39,7 @@
             margin: 0 auto;
             min-height: 100vh;
             box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            padding-bottom: 64px; /* Space for bottom nav */
         }
         main {
             transition: transform 0.3s ease;
@@ -149,15 +150,6 @@
                 </div>
             </div>
         </main>
-        
-        <nav class="flex-shrink-0 bg-slate-800 border-t border-slate-700 flex justify-around h-16 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
-            <button data-view="watchlist" class="bottom-nav-tab flex flex-col items-center justify-center text-sky-500 w-full active:bg-slate-700 transition-colors">
-                <span class="text-sm font-semibold">自選列表</span>
-            </button>
-            <button data-view="scanner" class="bottom-nav-tab flex flex-col items-center justify-center text-slate-400 w-full active:bg-slate-700 transition-colors">
-                <span class="text-sm font-semibold">機會掃描</span>
-            </button>
-        </nav>
     </div>
 
     <!-- Detail View - Now acts as a full-page overlay -->
@@ -172,6 +164,16 @@
             </div>
         </div>
     </div>
+
+    <!-- Bottom Navigation -->
+    <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-800 border-t border-slate-700 flex justify-around h-16 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+        <button data-view="watchlist" class="bottom-nav-tab flex flex-col items-center justify-center text-sky-500 w-full active:bg-slate-700 transition-colors">
+            <span class="text-sm font-semibold">自選列表</span>
+        </button>
+        <button data-view="scanner" class="bottom-nav-tab flex flex-col items-center justify-center text-slate-400 w-full active:bg-slate-700 transition-colors">
+            <span class="text-sm font-semibold">機會掃描</span>
+        </button>
+    </nav>
 
     <!-- Add Stock Modal -->
     <div id="add-stock-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 p-4">
