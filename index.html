@@ -46,28 +46,44 @@
         @media (min-width: 768px) and (max-width: 1024px) {
             .app-container {
                 max-width: 100%;
-                display: grid;
-                grid-template-columns: 1fr;
-                grid-template-rows: auto 1fr auto;
-                padding-bottom: 0;
+                padding-bottom: 64px; /* Keep space for bottom nav */
                 box-shadow: none;
             }
             
-            .bottom-nav-desktop {
-                display: none;
-            }
-            
             .header-desktop {
-                position: relative !important;
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
                 max-width: 100% !important;
-                left: auto !important;
-                right: auto !important;
-                top: auto !important;
+                z-index: 10;
             }
             
             .main-desktop {
-                padding-top: 1rem !important;
+                padding-top: 5rem !important; /* Space for fixed header */
                 max-height: calc(100vh - 140px);
+            }
+            
+            .bottom-nav-desktop {
+                display: flex !important; /* Show bottom nav on iPad */
+                max-width: 100% !important;
+            }
+            
+            .sidebar-desktop {
+                display: none; /* Hide sidebar on iPad */
+            }
+            
+            /* Two-column grid for cards on iPad */
+            .stock-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 1rem;
+            }
+            
+            .opportunity-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 1rem;
             }
         }
         
@@ -77,9 +93,8 @@
                 max-width: 100%;
                 display: grid;
                 grid-template-columns: 280px 1fr;
-                grid-template-rows: auto 1fr;
+                grid-template-rows: 1fr;
                 grid-template-areas: 
-                    "sidebar header"
                     "sidebar main";
                 padding-bottom: 0;
                 height: 100vh;
@@ -87,20 +102,15 @@
             }
             
             .header-desktop {
-                grid-area: header;
-                position: relative !important;
-                max-width: 100% !important;
-                left: auto !important;
-                right: auto !important;
-                top: auto !important;
-                border-left: 1px solid #374151;
+                display: none; /* Hide header on desktop */
             }
             
             .main-desktop {
                 grid-area: main;
-                padding-top: 1rem !important;
+                padding: 1rem !important;
                 border-left: 1px solid #374151;
-                max-height: calc(100vh - 80px);
+                max-height: 100vh;
+                overflow-y: auto;
             }
             
             .sidebar-desktop {
@@ -135,16 +145,25 @@
                 color: white;
             }
             
+            /* Two-column grid for cards on desktop */
             .stock-grid {
                 display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                grid-template-columns: repeat(2, 1fr);
                 gap: 1rem;
             }
             
             .opportunity-grid {
                 display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+                grid-template-columns: repeat(2, 1fr);
                 gap: 1rem;
+            }
+            
+            /* Detail view adjustments for desktop */
+            #view-detail {
+                position: fixed !important;
+                inset: 0 !important;
+                transform: none !important;
+                z-index: 30 !important;
             }
         }
         main {
@@ -229,13 +248,26 @@
                 <div class="nav-item-desktop" data-view="scanner">
                     <span class="text-sm font-semibold">機會掃描</span>
                 </div>
+                
+                <!-- Market selection for desktop -->
+                <div id="desktop-market-controls" class="mt-6 mb-4">
+                    <div class="mb-3">
+                        <div class="flex bg-slate-700 rounded-lg p-1">
+                            <button data-market="US" class="desktop-market-tab flex-1 px-3 py-2 text-sm font-semibold rounded-md text-slate-300">美股</button>
+                            <button data-market="TW" class="desktop-market-tab flex-1 px-3 py-2 text-sm font-semibold rounded-md text-slate-300">台股</button>
+                        </div>
+                    </div>
+                    <button id="desktop-add-stock-btn" class="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm">
+                        + 新增股票
+                    </button>
+                </div>
             </nav>
             <div id="sidebar-auth-section" class="mt-auto pt-4 border-t border-slate-700">
                 <!-- Auth content will be injected here -->
             </div>
         </aside>
         
-        <header id="main-header" class="fixed top-0 left-0 right-0 max-w-md mx-auto bg-slate-800 flex-shrink-0 z-10 p-4 border-b border-slate-700 lg:relative lg:max-w-full header-desktop">
+        <header id="main-header" class="fixed top-0 left-0 right-0 max-w-md mx-auto bg-slate-800 flex-shrink-0 z-10 p-4 border-b border-slate-700 md:max-w-full lg:hidden header-desktop">
              <!-- Header content is injected by JS -->
         </header>
 
@@ -274,12 +306,12 @@
     </div>
 
     <!-- Detail View - Now acts as a full-page overlay -->
-    <div id="view-detail" class="fixed inset-0 bg-slate-900 z-20 hidden transform translate-x-full transition-transform duration-300 app-container lg:relative lg:translate-x-0 lg:inset-auto lg:z-auto">
+    <div id="view-detail" class="fixed inset-0 bg-slate-900 z-20 hidden transform translate-x-full transition-transform duration-300 app-container">
         <header class="bg-slate-800 sticky top-0 z-10 p-4 border-b border-slate-700 flex items-center">
-            <button id="back-btn" class="text-sky-500 text-2xl mr-4 w-8 h-8 flex items-center justify-center active:bg-slate-700 rounded-full lg:hidden">‹</button>
+            <button id="back-btn" class="text-sky-500 text-2xl mr-4 w-8 h-8 flex items-center justify-center active:bg-slate-700 rounded-full">‹</button>
             <h2 id="detail-header-title" class="text-lg font-bold truncate">個股詳情</h2>
         </header>
-        <div id="detail-content-wrapper" class="overflow-y-auto h-[calc(100vh-65px)] lg:h-[calc(100vh-80px)]">
+        <div id="detail-content-wrapper" class="overflow-y-auto h-[calc(100vh-65px)]">
              <div id="detail-content" class="p-4">
                 <!-- Detail content will be injected here -->
             </div>
@@ -287,7 +319,7 @@
     </div>
 
     <!-- Bottom Navigation (hidden on desktop) -->
-    <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-800 border-t border-slate-700 flex justify-around h-16 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] lg:hidden bottom-nav-desktop">
+    <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-800 border-t border-slate-700 flex justify-around h-16 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] md:max-w-full lg:hidden bottom-nav-desktop">
         <button data-view="watchlist" class="bottom-nav-tab flex flex-col items-center justify-center text-sky-500 w-full active:bg-slate-700 transition-colors">
             <span class="text-sm font-semibold">自選列表</span>
         </button>
@@ -497,6 +529,24 @@ const App = {
             item.addEventListener('click', (e) => this.navigate(e.currentTarget.dataset.view));
         });
         
+        // Desktop market tabs
+        document.querySelectorAll('.desktop-market-tab').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                if (this.state.currentView === 'watchlist') {
+                    this.state.watchlistMarketView = e.currentTarget.dataset.market;
+                } else if (this.state.currentView === 'scanner') {
+                    this.state.scannerMarketView = e.currentTarget.dataset.market;
+                }
+                this.render();
+            });
+        });
+        
+        // Desktop add stock button
+        const desktopAddBtn = document.getElementById('desktop-add-stock-btn');
+        if (desktopAddBtn) {
+            desktopAddBtn.addEventListener('click', () => this.toggleModal(true));
+        }
+        
         document.getElementById('back-btn').addEventListener('click', () => this.closeDetailView());
         document.getElementById('close-modal-btn').addEventListener('click', () => this.toggleModal(false));
         document.getElementById('modal-add-btn').addEventListener('click', () => this.addStockFromInput());
@@ -570,6 +620,18 @@ const App = {
         if (activeDesktopItem) {
             activeDesktopItem.classList.add('active');
         }
+
+        // Update desktop market tabs
+        document.querySelectorAll('.desktop-market-tab').forEach(tab => {
+            tab.classList.remove('bg-slate-800', 'shadow', 'text-white');
+            tab.classList.add('text-slate-300');
+        });
+        
+        const currentMarketView = this.state.currentView === 'watchlist' ? this.state.watchlistMarketView : this.state.scannerMarketView;
+        document.querySelectorAll(`.desktop-market-tab[data-market="${currentMarketView}"]`).forEach(tab => {
+            tab.classList.add('bg-slate-800', 'shadow', 'text-white');
+            tab.classList.remove('text-slate-300');
+        });
 
         if (this.state.currentView === 'watchlist') {
             this.renderWatchlist();
@@ -1179,24 +1241,15 @@ const App = {
         this.renderDetail(symbol);
         const detailView = document.getElementById('view-detail');
         detailView.classList.remove('hidden');
-        
-        // Check if we're on desktop (lg breakpoint)
-        if (window.innerWidth >= 1024) {
-            // On desktop, just show the detail view without animation
+        requestAnimationFrame(() => {
             detailView.classList.remove('translate-x-full');
-        } else {
-            // On mobile/tablet, use slide animation
-            requestAnimationFrame(() => {
-                detailView.classList.remove('translate-x-full');
-            });
-        }
+        });
     },
 
     closeDetailView() {
         const detailView = document.getElementById('view-detail');
-        
-        if (window.innerWidth >= 1024) {
-            // On desktop, hide immediately
+        detailView.classList.add('translate-x-full');
+        setTimeout(() => {
             detailView.classList.add('hidden');
             this.state.selectedStock = null;
             if (this.state.advancedChartInstance) {
@@ -1204,19 +1257,7 @@ const App = {
                 this.state.advancedChartInstance = null;
             }
             this.navigate(this.state.previousView);
-        } else {
-            // On mobile/tablet, use slide animation
-            detailView.classList.add('translate-x-full');
-            setTimeout(() => {
-                detailView.classList.add('hidden');
-                this.state.selectedStock = null;
-                if (this.state.advancedChartInstance) {
-                    this.state.advancedChartInstance.destroy();
-                    this.state.advancedChartInstance = null;
-                }
-                this.navigate(this.state.previousView);
-            }, 300);
-        }
+        }, 300);
     },
     
     toggleModal(show) {
