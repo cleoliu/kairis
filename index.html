@@ -35,11 +35,117 @@
             -webkit-tap-highlight-color: transparent;
         }
         .app-container {
-            max-width: 440px; /* Common width for mobile previews */
+            max-width: 440px; /* Mobile first */
             margin: 0 auto;
             min-height: 100vh;
             box-shadow: 0 0 20px rgba(0,0,0,0.1);
             padding-bottom: 64px; /* Space for bottom nav */
+        }
+        
+        /* Tablet styles (iPad) */
+        @media (min-width: 768px) and (max-width: 1024px) {
+            .app-container {
+                max-width: 100%;
+                display: grid;
+                grid-template-columns: 1fr;
+                grid-template-rows: auto 1fr auto;
+                padding-bottom: 0;
+                box-shadow: none;
+            }
+            
+            .bottom-nav-desktop {
+                display: none;
+            }
+            
+            .header-desktop {
+                position: relative !important;
+                max-width: 100% !important;
+                left: auto !important;
+                right: auto !important;
+                top: auto !important;
+            }
+            
+            .main-desktop {
+                padding-top: 1rem !important;
+                max-height: calc(100vh - 140px);
+            }
+        }
+        
+        /* Desktop styles */
+        @media (min-width: 1025px) {
+            .app-container {
+                max-width: 100%;
+                display: grid;
+                grid-template-columns: 280px 1fr;
+                grid-template-rows: auto 1fr;
+                grid-template-areas: 
+                    "sidebar header"
+                    "sidebar main";
+                padding-bottom: 0;
+                height: 100vh;
+                box-shadow: none;
+            }
+            
+            .header-desktop {
+                grid-area: header;
+                position: relative !important;
+                max-width: 100% !important;
+                left: auto !important;
+                right: auto !important;
+                top: auto !important;
+                border-left: 1px solid #374151;
+            }
+            
+            .main-desktop {
+                grid-area: main;
+                padding-top: 1rem !important;
+                border-left: 1px solid #374151;
+                max-height: calc(100vh - 80px);
+            }
+            
+            .sidebar-desktop {
+                grid-area: sidebar;
+                background-color: #1e293b;
+                border-right: 1px solid #374151;
+                display: flex;
+                flex-direction: column;
+                padding: 1rem;
+            }
+            
+            .bottom-nav-desktop {
+                display: none;
+            }
+            
+            .nav-item-desktop {
+                padding: 0.75rem 1rem;
+                margin-bottom: 0.5rem;
+                border-radius: 0.5rem;
+                cursor: pointer;
+                transition: background-color 0.2s;
+                color: #94a3b8;
+                font-weight: 600;
+            }
+            
+            .nav-item-desktop:hover {
+                background-color: #374151;
+            }
+            
+            .nav-item-desktop.active {
+                background-color: #0ea5e9;
+                color: white;
+            }
+            
+            .stock-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                gap: 1rem;
+            }
+            
+            .opportunity-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+                gap: 1rem;
+            }
         }
         main {
             transition: transform 0.3s ease;
@@ -103,6 +209,7 @@
         .line-clamp-2 {
             display: -webkit-box;
             -webkit-line-clamp: 2;
+            line-clamp: 2;
             -webkit-box-orient: vertical;
             text-overflow: ellipsis;
         }
@@ -112,11 +219,27 @@
 
     <div id="app" class="app-container bg-slate-900 flex flex-col h-screen">
         
-        <header id="main-header" class="fixed top-0 left-0 right-0 max-w-md mx-auto bg-slate-800 flex-shrink-0 z-10 p-4 border-b border-slate-700">
+        <!-- Desktop Sidebar (hidden on mobile) -->
+        <aside class="sidebar-desktop hidden lg:flex">
+            <h1 class="text-xl font-bold text-white mb-6">Kairis</h1>
+            <nav class="flex-1">
+                <div class="nav-item-desktop active" data-view="watchlist">
+                    <span class="text-sm font-semibold">自選列表</span>
+                </div>
+                <div class="nav-item-desktop" data-view="scanner">
+                    <span class="text-sm font-semibold">機會掃描</span>
+                </div>
+            </nav>
+            <div id="sidebar-auth-section" class="mt-auto pt-4 border-t border-slate-700">
+                <!-- Auth content will be injected here -->
+            </div>
+        </aside>
+        
+        <header id="main-header" class="fixed top-0 left-0 right-0 max-w-md mx-auto bg-slate-800 flex-shrink-0 z-10 p-4 border-b border-slate-700 lg:relative lg:max-w-full header-desktop">
              <!-- Header content is injected by JS -->
         </header>
 
-        <main class="p-4 pt-20 relative flex-grow overflow-y-auto">
+        <main class="p-4 pt-20 relative flex-grow overflow-y-auto lg:pt-4 main-desktop">
              <div id="pull-to-refresh-indicator">
                 <div class="loader !w-6 !h-6 !border-4"></div>
             </div>
@@ -151,20 +274,20 @@
     </div>
 
     <!-- Detail View - Now acts as a full-page overlay -->
-    <div id="view-detail" class="fixed inset-0 bg-slate-900 z-20 hidden transform translate-x-full transition-transform duration-300 app-container">
+    <div id="view-detail" class="fixed inset-0 bg-slate-900 z-20 hidden transform translate-x-full transition-transform duration-300 app-container lg:relative lg:translate-x-0 lg:inset-auto lg:z-auto">
         <header class="bg-slate-800 sticky top-0 z-10 p-4 border-b border-slate-700 flex items-center">
-            <button id="back-btn" class="text-sky-500 text-2xl mr-4 w-8 h-8 flex items-center justify-center active:bg-slate-700 rounded-full">‹</button>
+            <button id="back-btn" class="text-sky-500 text-2xl mr-4 w-8 h-8 flex items-center justify-center active:bg-slate-700 rounded-full lg:hidden">‹</button>
             <h2 id="detail-header-title" class="text-lg font-bold truncate">個股詳情</h2>
         </header>
-        <div id="detail-content-wrapper" class="overflow-y-auto h-[calc(100vh-65px)]">
+        <div id="detail-content-wrapper" class="overflow-y-auto h-[calc(100vh-65px)] lg:h-[calc(100vh-80px)]">
              <div id="detail-content" class="p-4">
                 <!-- Detail content will be injected here -->
             </div>
         </div>
     </div>
 
-    <!-- Bottom Navigation -->
-    <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-800 border-t border-slate-700 flex justify-around h-16 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+    <!-- Bottom Navigation (hidden on desktop) -->
+    <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-800 border-t border-slate-700 flex justify-around h-16 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] lg:hidden bottom-nav-desktop">
         <button data-view="watchlist" class="bottom-nav-tab flex flex-col items-center justify-center text-sky-500 w-full active:bg-slate-700 transition-colors">
             <span class="text-sm font-semibold">自選列表</span>
         </button>
@@ -364,9 +487,16 @@ const App = {
     },
 
     setupEventListeners() {
+        // Mobile bottom navigation
         document.querySelectorAll('.bottom-nav-tab').forEach(tab => {
             tab.addEventListener('click', (e) => this.navigate(e.currentTarget.dataset.view));
         });
+        
+        // Desktop sidebar navigation
+        document.querySelectorAll('.nav-item-desktop').forEach(item => {
+            item.addEventListener('click', (e) => this.navigate(e.currentTarget.dataset.view));
+        });
+        
         document.getElementById('back-btn').addEventListener('click', () => this.closeDetailView());
         document.getElementById('close-modal-btn').addEventListener('click', () => this.toggleModal(false));
         document.getElementById('modal-add-btn').addEventListener('click', () => this.addStockFromInput());
@@ -421,6 +551,7 @@ const App = {
         document.querySelectorAll('#app > main > .view').forEach(v => v.classList.add('hidden'));
         document.getElementById(`view-${this.state.currentView}`).classList.remove('hidden');
 
+        // Update mobile bottom navigation
         document.querySelectorAll('.bottom-nav-tab').forEach(tab => {
             tab.classList.remove('text-sky-500');
             tab.classList.add('text-slate-400');
@@ -429,6 +560,15 @@ const App = {
         if (activeTab) {
             activeTab.classList.add('text-sky-500');
             activeTab.classList.remove('text-slate-400');
+        }
+
+        // Update desktop sidebar navigation
+        document.querySelectorAll('.nav-item-desktop').forEach(item => {
+            item.classList.remove('active');
+        });
+        const activeDesktopItem = document.querySelector(`.nav-item-desktop[data-view="${this.state.currentView}"]`);
+        if (activeDesktopItem) {
+            activeDesktopItem.classList.add('active');
         }
 
         if (this.state.currentView === 'watchlist') {
@@ -440,6 +580,7 @@ const App = {
     
     renderHeader() {
         const header = document.getElementById('main-header');
+        const sidebarAuthSection = document.getElementById('sidebar-auth-section');
         let content = '';
 
         let authContent = '';
@@ -454,6 +595,11 @@ const App = {
             authContent = `<button id="login-btn" class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-3 rounded-lg transition-colors text-sm">使用 Google 登入</button>`;
         }
 
+        // Update sidebar auth section for desktop
+        if (sidebarAuthSection) {
+            sidebarAuthSection.innerHTML = authContent;
+        }
+
         if (this.state.currentView === 'watchlist') {
             content = `
                 <div class="flex justify-between items-center">
@@ -464,7 +610,9 @@ const App = {
                         </div>
                         <button id="add-stock-btn" class="bg-sky-500 hover:bg-sky-600 text-white font-bold h-9 w-9 flex items-center justify-center rounded-lg transition-colors text-lg">+</button>
                     </div>
-                    ${authContent}
+                    <div class="lg:hidden">
+                        ${authContent}
+                    </div>
                 </div>
             `;
         } else if (this.state.currentView === 'scanner') {
@@ -474,20 +622,29 @@ const App = {
                         <button data-market="US" class="scanner-market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.scannerMarketView === 'US' ? 'bg-slate-800 shadow' : ''}">美股</button>
                         <button data-market="TW" class="scanner-market-tab px-4 py-1 text-sm font-semibold rounded-md ${this.state.scannerMarketView === 'TW' ? 'bg-slate-800 shadow' : ''}">台股</button>
                     </div>
-                    ${authContent}
+                    <div class="lg:hidden">
+                        ${authContent}
+                    </div>
                 </div>
             `;
         }
         header.innerHTML = content;
 
-        if (this.state.user && !this.state.user.isAnonymous) {
-            document.getElementById('logout-btn').addEventListener('click', () => this.handleLogout());
-        } else {
-            document.getElementById('login-btn').addEventListener('click', () => this.handleGoogleLogin());
-        }
+        // Bind auth events for both header and sidebar
+        const loginBtns = document.querySelectorAll('#login-btn');
+        const logoutBtns = document.querySelectorAll('#logout-btn');
+        
+        loginBtns.forEach(btn => {
+            btn.addEventListener('click', () => this.handleGoogleLogin());
+        });
+        
+        logoutBtns.forEach(btn => {
+            btn.addEventListener('click', () => this.handleLogout());
+        });
 
         if (this.state.currentView === 'watchlist') {
-            document.getElementById('add-stock-btn').addEventListener('click', () => this.toggleModal(true));
+            const addBtn = document.getElementById('add-stock-btn');
+            if (addBtn) addBtn.addEventListener('click', () => this.toggleModal(true));
             document.querySelectorAll('.market-tab').forEach(tab => {
                 tab.addEventListener('click', (e) => {
                     this.state.watchlistMarketView = e.currentTarget.dataset.market;
@@ -536,6 +693,9 @@ const App = {
             container.innerHTML = `<p class="text-slate-400 text-center mt-10">此列表是空的，請點擊右上角「+」新增股票。</p>`;
             return;
         }
+
+        // Add responsive grid class for desktop
+        container.className = 'space-y-3 lg:stock-grid lg:space-y-0';
 
         filteredList.forEach(symbol => {
             const stock = this.state.stockDataCache[symbol];
@@ -632,6 +792,10 @@ const App = {
 
         buyOpportunities.sort((a, b) => b.signalData.score - a.signalData.score);
         sellOpportunities.sort((a, b) => b.signalData.score - a.signalData.score);
+
+        // Add responsive grid classes for desktop
+        buyContainer.className = 'space-y-3 lg:opportunity-grid lg:space-y-0';
+        sellContainer.className = 'space-y-3 lg:opportunity-grid lg:space-y-0';
 
         buyContainer.innerHTML = buyOpportunities.length > 0 ? buyOpportunities.map(op => this.createOpportunityCard(op.symbol, op.stock, op.signalData)).join('') : `<p class="text-slate-400 text-center p-4">暫無符合條件的買進機會。</p>`;
         sellContainer.innerHTML = sellOpportunities.length > 0 ? sellOpportunities.map(op => this.createOpportunityCard(op.symbol, op.stock, op.signalData)).join('') : `<p class="text-slate-400 text-center p-4">暫無符合條件的賣出機會。</p>`;
@@ -1015,15 +1179,24 @@ const App = {
         this.renderDetail(symbol);
         const detailView = document.getElementById('view-detail');
         detailView.classList.remove('hidden');
-        requestAnimationFrame(() => {
+        
+        // Check if we're on desktop (lg breakpoint)
+        if (window.innerWidth >= 1024) {
+            // On desktop, just show the detail view without animation
             detailView.classList.remove('translate-x-full');
-        });
+        } else {
+            // On mobile/tablet, use slide animation
+            requestAnimationFrame(() => {
+                detailView.classList.remove('translate-x-full');
+            });
+        }
     },
 
     closeDetailView() {
         const detailView = document.getElementById('view-detail');
-        detailView.classList.add('translate-x-full');
-        setTimeout(() => {
+        
+        if (window.innerWidth >= 1024) {
+            // On desktop, hide immediately
             detailView.classList.add('hidden');
             this.state.selectedStock = null;
             if (this.state.advancedChartInstance) {
@@ -1031,7 +1204,19 @@ const App = {
                 this.state.advancedChartInstance = null;
             }
             this.navigate(this.state.previousView);
-        }, 300);
+        } else {
+            // On mobile/tablet, use slide animation
+            detailView.classList.add('translate-x-full');
+            setTimeout(() => {
+                detailView.classList.add('hidden');
+                this.state.selectedStock = null;
+                if (this.state.advancedChartInstance) {
+                    this.state.advancedChartInstance.destroy();
+                    this.state.advancedChartInstance = null;
+                }
+                this.navigate(this.state.previousView);
+            }, 300);
+        }
     },
     
     toggleModal(show) {
