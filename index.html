@@ -43,7 +43,7 @@
         }
         
         /* Tablet styles (iPad) */
-        @media (min-width: 768px) {
+        @media (min-width: 768px) and (max-width: 1024px) {
             .app-container {
                 max-width: 100%;
                 padding-bottom: 64px; /* Keep space for bottom nav */
@@ -73,8 +73,14 @@
                 display: none; /* Hide sidebar on iPad */
             }
             
-            /* Two-column grid for cards on iPad and Desktop */
-            .card-grid {
+            /* Two-column grid for cards on iPad */
+            .stock-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 1rem;
+            }
+            
+            .opportunity-grid {
                 display: grid;
                 grid-template-columns: repeat(2, 1fr);
                 gap: 1rem;
@@ -137,6 +143,19 @@
             .nav-item-desktop.active {
                 background-color: #0ea5e9;
                 color: white;
+            }
+            
+            /* Two-column grid for cards on desktop */
+            .stock-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 1rem;
+            }
+            
+            .opportunity-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 1rem;
             }
             
             /* Detail view adjustments for desktop */
@@ -737,8 +756,8 @@ const App = {
             return;
         }
 
-        // Add responsive grid class for desktop/tablet
-        container.className = 'space-y-3 md:card-grid md:space-y-0';
+        // Add responsive grid class for desktop
+        container.className = 'space-y-3 lg:stock-grid lg:space-y-0';
 
         filteredList.forEach(symbol => {
             const stock = this.state.stockDataCache[symbol];
@@ -757,7 +776,7 @@ const App = {
             const colorClass = isUp ? (isUS ? 'text-green-500' : 'text-red-500') : (isUS ? 'text-red-500' : 'text-green-500');
             
             const card = `
-                <div class="stock-card bg-slate-800 p-4 rounded-xl shadow-sm cursor-pointer active:bg-slate-700" data-symbol="${symbol}">
+                <div class="bg-slate-800 p-4 rounded-xl shadow-sm cursor-pointer active:bg-slate-700" data-symbol="${symbol}">
                     <div class="flex justify-between items-center">
                         <div class="flex-1 min-w-0">
                             <p class="font-bold text-base truncate">${symbol.replace(/\.US$|\.TW$/, '')}</p>
@@ -785,7 +804,7 @@ const App = {
             container.innerHTML += card;
         });
 
-        document.querySelectorAll('.stock-card').forEach(card => {
+        document.querySelectorAll('#stock-list-container [data-symbol]').forEach(card => {
             card.addEventListener('click', (e) => {
                 if (e.target.classList.contains('remove-stock-btn')) return;
                 this.selectStock(card.dataset.symbol);
@@ -836,9 +855,9 @@ const App = {
         buyOpportunities.sort((a, b) => b.signalData.score - a.signalData.score);
         sellOpportunities.sort((a, b) => b.signalData.score - a.signalData.score);
 
-        // Add responsive grid classes for desktop/tablet
-        buyContainer.className = 'space-y-3 md:card-grid md:space-y-0';
-        sellContainer.className = 'space-y-3 md:card-grid md:space-y-0';
+        // Add responsive grid classes for desktop
+        buyContainer.className = 'space-y-3 lg:opportunity-grid lg:space-y-0';
+        sellContainer.className = 'space-y-3 lg:opportunity-grid lg:space-y-0';
 
         buyContainer.innerHTML = buyOpportunities.length > 0 ? buyOpportunities.map(op => this.createOpportunityCard(op.symbol, op.stock, op.signalData)).join('') : `<p class="text-slate-400 text-center p-4">暫無符合條件的買進機會。</p>`;
         sellContainer.innerHTML = sellOpportunities.length > 0 ? sellOpportunities.map(op => this.createOpportunityCard(op.symbol, op.stock, op.signalData)).join('') : `<p class="text-slate-400 text-center p-4">暫無符合條件的賣出機會。</p>`;
@@ -1201,7 +1220,8 @@ const App = {
                         }
                     }
                 }
-            });
+            }
+        });
     },
 
     createAnalysisCard(title, content) {
