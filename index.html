@@ -42,6 +42,21 @@
             padding-bottom: 64px; /* Space for bottom nav */
         }
         
+        /* General responsive grid for tablets and above */
+        @media (min-width: 768px) {
+            .stock-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 1rem;
+            }
+            
+            .opportunity-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 1rem;
+            }
+        }
+        
         /* Tablet styles (iPad) */
         @media (min-width: 768px) and (max-width: 1024px) {
             .app-container {
@@ -75,15 +90,15 @@
             
             /* Two-column grid for cards on iPad */
             .stock-grid {
-                display: grid;
-                grid-template-columns: repeat(2, 1fr);
-                gap: 1rem;
+                display: grid !important;
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 1rem !important;
             }
             
             .opportunity-grid {
-                display: grid;
-                grid-template-columns: repeat(2, 1fr);
-                gap: 1rem;
+                display: grid !important;
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 1rem !important;
             }
         }
         
@@ -756,8 +771,8 @@ const App = {
             return;
         }
 
-        // Add responsive grid class for desktop
-        container.className = 'space-y-3 lg:stock-grid lg:space-y-0';
+        // Add responsive grid class for desktop and iPad
+        container.className = 'space-y-3 md:stock-grid md:space-y-0';
 
         filteredList.forEach(symbol => {
             const stock = this.state.stockDataCache[symbol];
@@ -855,9 +870,9 @@ const App = {
         buyOpportunities.sort((a, b) => b.signalData.score - a.signalData.score);
         sellOpportunities.sort((a, b) => b.signalData.score - a.signalData.score);
 
-        // Add responsive grid classes for desktop
-        buyContainer.className = 'space-y-3 lg:opportunity-grid lg:space-y-0';
-        sellContainer.className = 'space-y-3 lg:opportunity-grid lg:space-y-0';
+        // Add responsive grid classes for desktop and iPad
+        buyContainer.className = 'space-y-3 md:opportunity-grid md:space-y-0';
+        sellContainer.className = 'space-y-3 md:opportunity-grid md:space-y-0';
 
         buyContainer.innerHTML = buyOpportunities.length > 0 ? buyOpportunities.map(op => this.createOpportunityCard(op.symbol, op.stock, op.signalData)).join('') : `<p class="text-slate-400 text-center p-4">暫無符合條件的買進機會。</p>`;
         sellContainer.innerHTML = sellOpportunities.length > 0 ? sellOpportunities.map(op => this.createOpportunityCard(op.symbol, op.stock, op.signalData)).join('') : `<p class="text-slate-400 text-center p-4">暫無符合條件的賣出機會。</p>`;
