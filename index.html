@@ -758,7 +758,7 @@ const App = {
         }
 
         // Add responsive grid class for desktop
-        container.className = 'space-y-3 lg:stock-grid lg:space-y-0';
+        container.className = 'space-y-3 md:space-y-0 lg:stock-grid';
 
         filteredList.forEach(symbol => {
             const stock = this.state.stockDataCache[symbol];
