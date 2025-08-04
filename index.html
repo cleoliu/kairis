@@ -42,6 +42,7 @@
             padding-bottom: 64px; /* Space for bottom nav */
         }
         
+
         /* Tablet styles (iPad) */
         @media (min-width: 768px) and (max-width: 1024px) {
             .app-container {
@@ -74,17 +75,22 @@
             }
             
             /* Two-column grid for cards on iPad */
-            #stock-list-container {
+            #stock-list-container.grid-layout {
                 display: grid !important;
                 grid-template-columns: repeat(2, 1fr) !important;
                 gap: 1rem !important;
             }
             
-            #buy-opportunities,
-            #sell-opportunities {
+            #buy-opportunities.grid-layout,
+            #sell-opportunities.grid-layout {
                 display: grid !important;
                 grid-template-columns: repeat(2, 1fr) !important;
                 gap: 1rem !important;
+            }
+            
+            /* Remove margin-top when in grid layout */
+            .grid-layout > * {
+                margin-top: 0 !important;
             }
         }
         
