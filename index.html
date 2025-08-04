@@ -76,14 +76,17 @@
             /* Two-column grid for cards on iPad */
             .stock-grid {
                 display: grid;
-                grid-template-columns: repeat(2, 1fr);
-                gap: 1rem;
+            #stock-list-container {
+                display: grid !important;
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 1rem !important;
             }
             
-            .opportunity-grid {
-                display: grid;
-                grid-template-columns: repeat(2, 1fr);
-                gap: 1rem;
+            #buy-opportunities,
+            #sell-opportunities {
+                display: grid !important;
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 1rem !important;
             }
         }
         
