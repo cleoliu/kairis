@@ -1193,11 +1193,11 @@ const App = {
 
         if (this.state.chartTimeframe === 'W') {
             // 週線需要更多的日線數據來生成足夠的週線數據
-            // 使用最多350天（約50週 x 7天）的數據來確保能生成50週的週線數據
-            const dailyDataForWeekly = history.slice(0, Math.min(350, history.length));
+            // 使用最多245天（約35週 x 7天）的數據來確保能生成35週的週線數據
+            const dailyDataForWeekly = history.slice(0, Math.min(245, history.length));
             console.log('Daily data for weekly conversion:', dailyDataForWeekly.length);
             
-            chartData = this.calculateWeeklyData(dailyDataForWeekly, 50); // 增加到50週以確保有足夠數據顯示MACD
+            chartData = this.calculateWeeklyData(dailyDataForWeekly, 35); // 調整到35週顯示週線數據
             macdData = chartData; // 週線使用生成的週線數據
             timeUnit = 'week';
             
