@@ -1133,7 +1133,7 @@ const App = {
         return html;
     },
 
-    calculateWeeklyData(dailyHistory) {
+    calculateWeeklyData(dailyHistory, maxWeeks = null) {
         if (!dailyHistory || dailyHistory.length < 1) return [];
 
         const weeklyMap = new Map();
@@ -1161,7 +1161,14 @@ const App = {
             }
         });
 
-        return Array.from(weeklyMap.values()).reverse();
+        const weeklyData = Array.from(weeklyMap.values()).reverse();
+        
+        // 如果指定了最大週數，則限制返回的數據
+        if (maxWeeks && weeklyData.length > maxWeeks) {
+            return weeklyData.slice(0, maxWeeks);
+        }
+        
+        return weeklyData;
     },
 
     renderAdvancedChart(symbol) {
@@ -1178,8 +1185,8 @@ const App = {
         let timeUnit;
 
         if (this.state.chartTimeframe === 'W') {
-            chartData = this.calculateWeeklyData(history);
-            macdData = chartData; // 週線數據通常比較少，直接使用
+            chartData = this.calculateWeeklyData(history, 35);
+            macdData = chartData; // 週線使用35筆數據
             timeUnit = 'week';
         } else {
             // K線圖顯示最近30天，但MACD計算使用更多數據
@@ -1306,7 +1313,7 @@ const App = {
                         order: 3 // 柱狀圖在最底層
                     },
                     {
-                        label: 'DIF 線 (MACD)',
+                        label: 'DIF',
                         data: displayData.macdLine,
                         type: 'line',
                         borderColor: '#3b82f6', // 藍色
@@ -1314,12 +1321,12 @@ const App = {
                         borderWidth: 2,
                         fill: false,
                         tension: 0.1,
-                        pointRadius: 1,
+                        pointRadius: 0,
                         pointHoverRadius: 4,
                         order: 1
                     },
                     {
-                        label: 'DEA 線 (Signal)',
+                        label: 'DEA',
                         data: displayData.signalLine,
                         type: 'line',
                         borderColor: '#f59e0b', // 橙色
@@ -1327,7 +1334,7 @@ const App = {
                         borderWidth: 2,
                         fill: false,
                         tension: 0.1,
-                        pointRadius: 1,
+                        pointRadius: 0,
                         pointHoverRadius: 4,
                         order: 2
                     }
@@ -1353,7 +1360,7 @@ const App = {
                         beginAtZero: true,
                         title: {
                             display: true,
-                            text: macdData.length < 35 ? 'MACD (簡化版)' : 'MACD',
+                            text: 'MACD',
                             color: '#94a3b8',
                             font: { size: 12 }
                         }
@@ -1365,7 +1372,7 @@ const App = {
                         position: 'top',
                         labels: {
                             color: '#94a3b8',
-                            font: { size: 12 },
+                            font: { size: 8 },
                             usePointStyle: false
                         }
                     },
@@ -1378,9 +1385,9 @@ const App = {
                                 if (datasetLabel === 'MACD 柱狀圖') {
                                     const color = value >= 0 ? '多頭' : '空頭';
                                     return `${datasetLabel}: ${value.toFixed(4)} (${color})`;
-                                } else if (datasetLabel === 'DIF 線 (MACD)') {
+                                } else if (datasetLabel === 'DIF') {
                                     return `${datasetLabel}: ${value.toFixed(4)}`;
-                                } else if (datasetLabel === 'DEA 線 (Signal)') {
+                                } else if (datasetLabel === 'DEA') {
                                     return `${datasetLabel}: ${value.toFixed(4)}`;
                                 }
                                 return `${datasetLabel}: ${value.toFixed(4)}`;
@@ -1403,8 +1410,6 @@ const App = {
                                     const histogram = context.parsed.y;
                                     
                                     return [
-                                        `DIF: ${dif.toFixed(4)}`,
-                                        `DEA: ${dea.toFixed(4)}`,
                                         `趨勢: ${histogram >= 0 ? '多頭強化' : '空頭強化'}`
                                     ];
                                 }
@@ -1420,20 +1425,13 @@ const App = {
     calculateMACDHistory(chartData) {
         const closes = chartData.map(d => d.close);
         
-        // 降低最少數據要求，如果數據少於26個，就用簡化版本
-        if (closes.length < 12) {
-            console.warn('Data too limited for any MACD calculation, got:', closes.length);
+        if (closes.length < 35) {
+            console.warn('Not enough data for MACD calculation, need at least 35 data points, got:', closes.length);
             return {
                 macdLine: new Array(chartData.length).fill(0),
                 signalLine: new Array(chartData.length).fill(0),
                 histogram: new Array(chartData.length).fill(0)
             };
-        }
-        
-        if (closes.length < 26) {
-            console.warn('Limited data for MACD calculation, using simplified version, got:', closes.length);
-            // 使用簡化的 MACD 計算（5日和12日EMA）
-            return this.calculateSimplifiedMACD(closes, chartData.length);
         }
         
         // EMA 計算函數
@@ -1508,92 +1506,6 @@ const App = {
             nonZeroHistogram: histogram.filter(val => val !== 0).length,
             sampleHistogram: histogram.slice(-10),
             sampleMacd: macdLine.slice(-10)
-        });
-        
-        return {
-            macdLine: macdLine,
-            signalLine: signalLine,
-            histogram: histogram
-        };
-    },
-
-    calculateSimplifiedMACD(closes, dataLength) {
-        // 簡化版 MACD：使用 5日 EMA - 12日 EMA
-        const calculateEMA = (data, period) => {
-            const multiplier = 2 / (period + 1);
-            let ema = new Array(data.length);
-            
-            // 第一個 EMA 值使用 SMA
-            let sum = 0;
-            const startIndex = Math.min(period, data.length);
-            for (let i = 0; i < startIndex; i++) {
-                sum += data[i];
-            }
-            ema[startIndex - 1] = sum / startIndex;
-            
-            // 計算後續 EMA 值
-            for (let i = startIndex; i < data.length; i++) {
-                ema[i] = (data[i] - ema[i - 1]) * multiplier + ema[i - 1];
-            }
-            
-            return ema;
-        };
-
-        const ema5 = calculateEMA(closes, 5);
-        const ema12 = calculateEMA(closes, Math.min(12, closes.length));
-        
-        const macdLine = new Array(dataLength).fill(0);
-        const signalLine = new Array(dataLength).fill(0);
-        const histogram = new Array(dataLength).fill(0);
-        
-        // 從足夠的數據點開始計算 MACD 線
-        const startIndex = Math.max(5, 12);
-        for (let i = startIndex - 1; i < closes.length; i++) {
-            if (ema5[i] !== undefined && ema12[i] !== undefined) {
-                macdLine[i] = ema5[i] - ema12[i];
-            }
-        }
-        
-        // 嘗試計算簡化的 Signal 線（3日 EMA）
-        const validMacdValues = [];
-        for (let i = startIndex - 1; i < closes.length; i++) {
-            if (macdLine[i] !== 0) {
-                validMacdValues.push(macdLine[i]);
-            }
-        }
-        
-        if (validMacdValues.length >= 3) {
-            const signalEMA = calculateEMA(validMacdValues, 3);
-            let signalIndex = 0;
-            for (let i = startIndex - 1; i < closes.length; i++) {
-                if (macdLine[i] !== 0) {
-                    if (signalIndex >= 2 && signalEMA[signalIndex] !== undefined) {
-                        signalLine[i] = signalEMA[signalIndex];
-                    }
-                    signalIndex++;
-                }
-            }
-        }
-        
-        // 計算 Histogram
-        for (let i = 0; i < dataLength; i++) {
-            if (macdLine[i] !== 0 && signalLine[i] !== 0) {
-                histogram[i] = macdLine[i] - signalLine[i];
-            } else if (macdLine[i] !== 0) {
-                histogram[i] = macdLine[i]; // 沒有 Signal 線時使用 MACD 值
-            }
-        }
-        
-        console.log('Simplified MACD calculation:', {
-            dataLength: closes.length,
-            nonZeroMacd: macdLine.filter(val => val !== 0).length,
-            nonZeroSignal: signalLine.filter(val => val !== 0).length,
-            nonZeroHistogram: histogram.filter(val => val !== 0).length,
-            sampleValues: {
-                macd: macdLine.slice(-5),
-                signal: signalLine.slice(-5),
-                histogram: histogram.slice(-5)
-            }
         });
         
         return {
