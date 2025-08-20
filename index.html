@@ -1455,6 +1455,27 @@ const App = {
             };
         }
         
+        // 確保數據是按時間順序排列（最舊的在前面）
+        // 檢查數據順序，如果是新到舊則需要反轉
+        const isNewestFirst = new Date(chartData[0].date) > new Date(chartData[chartData.length - 1].date);
+        let orderedData = chartData;
+        if (isNewestFirst) {
+            orderedData = [...chartData].reverse();
+            console.log('Reversed data order for MACD calculation');
+        }
+        
+        const orderedCloses = orderedData.map(d => d.close);
+        
+        console.log('Ordered closes for MACD:', {
+            length: orderedCloses.length,
+            first5: orderedCloses.slice(0, 5),
+            last5: orderedCloses.slice(-5),
+            dates: { 
+                first: orderedData[0].date, 
+                last: orderedData[orderedData.length - 1].date 
+            }
+        });
+        
         // EMA 計算函數
         const calculateEMA = (data, period) => {
             const multiplier = 2 / (period + 1);
@@ -1476,12 +1497,12 @@ const App = {
         };
         
         // 計算 12日和26日 EMA
-        const ema12 = calculateEMA(closes, 12);
-        const ema26 = calculateEMA(closes, 26);
+        const ema12 = calculateEMA(orderedCloses, 12);
+        const ema26 = calculateEMA(orderedCloses, 26);
         
         // 計算 MACD 線
-        const macdLine = new Array(closes.length).fill(0);
-        for (let i = 25; i < closes.length; i++) { // 從第26個數據點開始
+        const macdLine = new Array(orderedCloses.length).fill(0);
+        for (let i = 25; i < orderedCloses.length; i++) { // 從第26個數據點開始
             if (ema12[i] !== undefined && ema26[i] !== undefined) {
                 macdLine[i] = ema12[i] - ema26[i];
             }
@@ -1489,18 +1510,18 @@ const App = {
         
         // 獲取有效的 MACD 值來計算 Signal 線
         const validMacdValues = [];
-        for (let i = 25; i < closes.length; i++) {
+        for (let i = 25; i < orderedCloses.length; i++) {
             if (macdLine[i] !== 0) {
                 validMacdValues.push(macdLine[i]);
             }
         }
         
         // 計算 Signal 線（MACD 的9日EMA）
-        const signalLine = new Array(closes.length).fill(0);
+        const signalLine = new Array(orderedCloses.length).fill(0);
         if (validMacdValues.length >= 9) {
             const signalEMA = calculateEMA(validMacdValues, 9);
             let signalIndex = 0;
-            for (let i = 25; i < closes.length; i++) {
+            for (let i = 25; i < orderedCloses.length; i++) {
                 if (macdLine[i] !== 0) {
                     if (signalIndex >= 8 && signalEMA[signalIndex] !== undefined) {
                         signalLine[i] = signalEMA[signalIndex];
@@ -1511,8 +1532,8 @@ const App = {
         }
         
         // 計算 Histogram
-        const histogram = new Array(closes.length).fill(0);
-        for (let i = 0; i < closes.length; i++) {
+        const histogram = new Array(orderedCloses.length).fill(0);
+        for (let i = 0; i < orderedCloses.length; i++) {
             if (macdLine[i] !== 0 && signalLine[i] !== 0) {
                 histogram[i] = macdLine[i] - signalLine[i];
             } else if (macdLine[i] !== 0) {
@@ -1522,17 +1543,30 @@ const App = {
         }
         
         console.log('MACD calculation details:', {
-            dataLength: chartData.length,
+            dataLength: orderedData.length,
             validMacdValues: validMacdValues.length,
             nonZeroHistogram: histogram.filter(val => val !== 0).length,
             sampleHistogram: histogram.slice(-10),
-            sampleMacd: macdLine.slice(-10)
+            sampleMacd: macdLine.slice(-10),
+            sampleSignal: signalLine.slice(-10)
         });
         
+        // 如果原始數據是新到舊的順序，需要將結果也反轉回去
+        let resultMacd = macdLine;
+        let resultSignal = signalLine;
+        let resultHistogram = histogram;
+        
+        if (isNewestFirst) {
+            resultMacd = [...macdLine].reverse();
+            resultSignal = [...signalLine].reverse();
+            resultHistogram = [...histogram].reverse();
+            console.log('Reversed results back to original order');
+        }
+        
         return {
-            macdLine: macdLine,
-            signalLine: signalLine,
-            histogram: histogram
+            macdLine: resultMacd,
+            signalLine: resultSignal,
+            histogram: resultHistogram
         };
     },
 
