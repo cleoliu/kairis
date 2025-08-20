@@ -383,6 +383,7 @@ const App = {
         isGeminiLoading: false,
         lastUpdated: null,
         advancedChartInstance: null,
+        macdChartInstance: null,
         stockDataCache: {},
         newsCache: {},
         isLoading: false,
@@ -1011,7 +1012,7 @@ const App = {
 
     getChartContentHTML() {
         return `
-            <div class="bg-slate-800 p-4 rounded-xl shadow-md">
+            <div class="bg-slate-800 p-4 rounded-xl shadow-md mb-4">
                 <div class="flex justify-between items-center mb-3">
                     <h3 class="text-lg font-bold">K 線圖</h3>
                     <div class="flex bg-slate-700 rounded-lg p-1">
@@ -1021,6 +1022,14 @@ const App = {
                 </div>
                 <div class="advanced-chart-container">
                     <canvas id="advanced-chart"></canvas>
+                </div>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-xl shadow-md">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-lg font-bold">MACD 指標</h3>
+                </div>
+                <div class="advanced-chart-container">
+                    <canvas id="macd-chart"></canvas>
                 </div>
             </div>
         `;
@@ -1159,6 +1168,9 @@ const App = {
         if (this.state.advancedChartInstance) {
             this.state.advancedChartInstance.destroy();
         }
+        if (this.state.macdChartInstance) {
+            this.state.macdChartInstance.destroy();
+        }
         
         const history = this.state.stockDataCache[symbol].history;
         let chartData;
@@ -1172,6 +1184,7 @@ const App = {
             timeUnit = 'day';
         }
 
+        // 繪製 K 線圖
         const ctx = document.getElementById('advanced-chart').getContext('2d');
         
         const data = chartData.map(d => ({
@@ -1223,6 +1236,156 @@ const App = {
                 }
             }
         });
+
+        // 繪製 MACD 圖表
+        this.renderMACDChart(symbol, chartData, timeUnit);
+    },
+
+    renderMACDChart(symbol, chartData, timeUnit) {
+        const macdCtx = document.getElementById('macd-chart').getContext('2d');
+        const macdData = this.calculateMACDHistory(chartData);
+        
+        const labels = chartData.map(d => new Date(d.date).getTime());
+        
+        this.state.macdChartInstance = new Chart(macdCtx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'MACD',
+                        data: macdData.macdLine,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        fill: false,
+                        pointRadius: 0,
+                        tension: 0.1
+                    },
+                    {
+                        label: 'Signal',
+                        data: macdData.signalLine,
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        borderWidth: 2,
+                        fill: false,
+                        pointRadius: 0,
+                        tension: 0.1
+                    },
+                    {
+                        label: 'Histogram',
+                        data: macdData.histogram,
+                        backgroundColor: function(context) {
+                            const value = context.parsed.y;
+                            return value >= 0 ? 'rgba(34, 197, 94, 0.7)' : 'rgba(239, 68, 68, 0.7)';
+                        },
+                        borderColor: function(context) {
+                            const value = context.parsed.y;
+                            return value >= 0 ? '#22c55e' : '#ef4444';
+                        },
+                        type: 'bar',
+                        borderWidth: 1,
+                        barThickness: 3
+                    }
+                ]
+            },
+            options: {
+                maintainAspectRatio: false,
+                responsive: true,
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: { unit: timeUnit },
+                        grid: { color: 'rgba(71, 85, 105, 0.5)' },
+                        ticks: { color: '#94a3b8' }
+                    },
+                    y: {
+                        grid: { color: 'rgba(71, 85, 105, 0.5)' },
+                        ticks: { color: '#94a3b8' },
+                        beginAtZero: true
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            color: '#94a3b8',
+                            font: { size: 12 },
+                            usePointStyle: true
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.dataset.label;
+                                const value = context.parsed.y.toFixed(4);
+                                return `${label}: ${value}`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    },
+
+    calculateMACDHistory(chartData) {
+        const closes = chartData.map(d => d.close);
+        
+        // EMA 計算函數
+        const calculateEMA = (data, period) => {
+            const multiplier = 2 / (period + 1);
+            let ema = [];
+            
+            // 第一個 EMA 值使用 SMA
+            let sum = 0;
+            for (let i = 0; i < Math.min(period, data.length); i++) {
+                sum += data[i];
+            }
+            ema[period - 1] = sum / period;
+            
+            // 計算後續 EMA 值
+            for (let i = period; i < data.length; i++) {
+                ema[i] = (data[i] - ema[i - 1]) * multiplier + ema[i - 1];
+            }
+            
+            return ema;
+        };
+        
+        // 計算 12日和26日 EMA
+        const ema12 = calculateEMA(closes, 12);
+        const ema26 = calculateEMA(closes, 26);
+        
+        // 計算 MACD 線
+        const macdLine = [];
+        for (let i = 25; i < closes.length; i++) { // 從第26個數據點開始（因為需要26日EMA）
+            macdLine.push(ema12[i] - ema26[i]);
+        }
+        
+        // 計算 Signal 線（MACD 的9日EMA）
+        const signalLine = calculateEMA(macdLine, 9);
+        
+        // 計算 Histogram
+        const histogram = [];
+        for (let i = 8; i < macdLine.length; i++) { // 從第9個MACD值開始（因為需要9日EMA）
+            histogram.push(macdLine[i] - signalLine[i]);
+        }
+        
+        // 補齊數據長度，前面填充 null
+        const totalLength = chartData.length;
+        const macdPadded = new Array(totalLength - macdLine.length).fill(null).concat(macdLine);
+        const signalPadded = new Array(totalLength - signalLine.length).fill(null).concat(signalLine);
+        const histogramPadded = new Array(totalLength - histogram.length).fill(null).concat(histogram);
+        
+        return {
+            macdLine: macdPadded,
+            signalLine: signalPadded,
+            histogram: histogramPadded
+        };
     },
 
     createAnalysisCard(title, content) {
@@ -1256,6 +1419,10 @@ const App = {
             if (this.state.advancedChartInstance) {
                 this.state.advancedChartInstance.destroy();
                 this.state.advancedChartInstance = null;
+            }
+            if (this.state.macdChartInstance) {
+                this.state.macdChartInstance.destroy();
+                this.state.macdChartInstance = null;
             }
             this.navigate(this.state.previousView);
         }, 300);
