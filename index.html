@@ -1295,14 +1295,41 @@ const App = {
                         label: 'MACD 柱狀圖',
                         data: displayData.histogram,
                         backgroundColor: displayData.histogram.map(value => 
-                            value >= 0 ? 'rgba(34, 197, 94, 0.8)' : 'rgba(239, 68, 68, 0.8)'
+                            value >= 0 ? 'rgba(34, 197, 94, 0.6)' : 'rgba(239, 68, 68, 0.6)'
                         ),
                         borderColor: displayData.histogram.map(value => 
                             value >= 0 ? '#16a34a' : '#dc2626'
                         ),
                         borderWidth: 1,
                         barThickness: 'flex',
-                        maxBarThickness: 8
+                        maxBarThickness: 8,
+                        order: 3 // 柱狀圖在最底層
+                    },
+                    {
+                        label: 'DIF 線 (MACD)',
+                        data: displayData.macdLine,
+                        type: 'line',
+                        borderColor: '#3b82f6', // 藍色
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.1,
+                        pointRadius: 1,
+                        pointHoverRadius: 4,
+                        order: 1
+                    },
+                    {
+                        label: 'DEA 線 (Signal)',
+                        data: displayData.signalLine,
+                        type: 'line',
+                        borderColor: '#f59e0b', // 橙色
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.1,
+                        pointRadius: 1,
+                        pointHoverRadius: 4,
+                        order: 2
                     }
                 ]
             },
@@ -1345,9 +1372,43 @@ const App = {
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                const value = context.parsed.y.toFixed(4);
-                                const color = context.parsed.y >= 0 ? '多頭' : '空頭';
-                                return `MACD: ${value} (${color})`;
+                                const datasetLabel = context.dataset.label;
+                                const value = context.parsed.y;
+                                
+                                if (datasetLabel === 'MACD 柱狀圖') {
+                                    const color = value >= 0 ? '多頭' : '空頭';
+                                    return `${datasetLabel}: ${value.toFixed(4)} (${color})`;
+                                } else if (datasetLabel === 'DIF 線 (MACD)') {
+                                    return `${datasetLabel}: ${value.toFixed(4)}`;
+                                } else if (datasetLabel === 'DEA 線 (Signal)') {
+                                    return `${datasetLabel}: ${value.toFixed(4)}`;
+                                }
+                                return `${datasetLabel}: ${value.toFixed(4)}`;
+                            },
+                            afterLabel: function(context) {
+                                // 顯示完整的 MACD 資訊
+                                if (context.datasetIndex === 0) { // 只在柱狀圖的 tooltip 中顯示摘要
+                                    const index = context.dataIndex;
+                                    const chart = context.chart;
+                                    const datasets = chart.data.datasets;
+                                    
+                                    let dif = 0, dea = 0;
+                                    if (datasets[1] && datasets[1].data[index] !== undefined) {
+                                        dif = datasets[1].data[index];
+                                    }
+                                    if (datasets[2] && datasets[2].data[index] !== undefined) {
+                                        dea = datasets[2].data[index];
+                                    }
+                                    
+                                    const histogram = context.parsed.y;
+                                    
+                                    return [
+                                        `DIF: ${dif.toFixed(4)}`,
+                                        `DEA: ${dea.toFixed(4)}`,
+                                        `趨勢: ${histogram >= 0 ? '多頭強化' : '空頭強化'}`
+                                    ];
+                                }
+                                return null;
                             }
                         }
                     }
@@ -1485,19 +1546,54 @@ const App = {
         const signalLine = new Array(dataLength).fill(0);
         const histogram = new Array(dataLength).fill(0);
         
-        // 從足夠的數據點開始計算
+        // 從足夠的數據點開始計算 MACD 線
         const startIndex = Math.max(5, 12);
         for (let i = startIndex - 1; i < closes.length; i++) {
             if (ema5[i] !== undefined && ema12[i] !== undefined) {
                 macdLine[i] = ema5[i] - ema12[i];
-                histogram[i] = macdLine[i]; // 簡化版沒有 Signal 線
+            }
+        }
+        
+        // 嘗試計算簡化的 Signal 線（3日 EMA）
+        const validMacdValues = [];
+        for (let i = startIndex - 1; i < closes.length; i++) {
+            if (macdLine[i] !== 0) {
+                validMacdValues.push(macdLine[i]);
+            }
+        }
+        
+        if (validMacdValues.length >= 3) {
+            const signalEMA = calculateEMA(validMacdValues, 3);
+            let signalIndex = 0;
+            for (let i = startIndex - 1; i < closes.length; i++) {
+                if (macdLine[i] !== 0) {
+                    if (signalIndex >= 2 && signalEMA[signalIndex] !== undefined) {
+                        signalLine[i] = signalEMA[signalIndex];
+                    }
+                    signalIndex++;
+                }
+            }
+        }
+        
+        // 計算 Histogram
+        for (let i = 0; i < dataLength; i++) {
+            if (macdLine[i] !== 0 && signalLine[i] !== 0) {
+                histogram[i] = macdLine[i] - signalLine[i];
+            } else if (macdLine[i] !== 0) {
+                histogram[i] = macdLine[i]; // 沒有 Signal 線時使用 MACD 值
             }
         }
         
         console.log('Simplified MACD calculation:', {
             dataLength: closes.length,
-            nonZeroValues: histogram.filter(val => val !== 0).length,
-            sampleValues: histogram.slice(-5)
+            nonZeroMacd: macdLine.filter(val => val !== 0).length,
+            nonZeroSignal: signalLine.filter(val => val !== 0).length,
+            nonZeroHistogram: histogram.filter(val => val !== 0).length,
+            sampleValues: {
+                macd: macdLine.slice(-5),
+                signal: signalLine.slice(-5),
+                histogram: histogram.slice(-5)
+            }
         });
         
         return {
