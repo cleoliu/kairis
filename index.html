@@ -1248,44 +1248,24 @@ const App = {
         const labels = chartData.map(d => new Date(d.date).getTime());
         
         this.state.macdChartInstance = new Chart(macdCtx, {
-            type: 'line',
+            type: 'bar',
             data: {
                 labels: labels,
                 datasets: [
                     {
-                        label: 'MACD',
-                        data: macdData.macdLine,
-                        borderColor: '#3b82f6',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        borderWidth: 2,
-                        fill: false,
-                        pointRadius: 0,
-                        tension: 0.1
-                    },
-                    {
-                        label: 'Signal',
-                        data: macdData.signalLine,
-                        borderColor: '#f59e0b',
-                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                        borderWidth: 2,
-                        fill: false,
-                        pointRadius: 0,
-                        tension: 0.1
-                    },
-                    {
-                        label: 'Histogram',
+                        label: 'MACD 柱狀圖',
                         data: macdData.histogram,
                         backgroundColor: function(context) {
                             const value = context.parsed.y;
-                            return value >= 0 ? 'rgba(34, 197, 94, 0.7)' : 'rgba(239, 68, 68, 0.7)';
+                            return value >= 0 ? 'rgba(34, 197, 94, 0.8)' : 'rgba(239, 68, 68, 0.8)';
                         },
                         borderColor: function(context) {
                             const value = context.parsed.y;
-                            return value >= 0 ? '#22c55e' : '#ef4444';
+                            return value >= 0 ? '#16a34a' : '#dc2626';
                         },
-                        type: 'bar',
                         borderWidth: 1,
-                        barThickness: 3
+                        barThickness: 'flex',
+                        maxBarThickness: 8
                     }
                 ]
             },
@@ -1306,7 +1286,13 @@ const App = {
                     y: {
                         grid: { color: 'rgba(71, 85, 105, 0.5)' },
                         ticks: { color: '#94a3b8' },
-                        beginAtZero: true
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'MACD',
+                            color: '#94a3b8',
+                            font: { size: 12 }
+                        }
                     }
                 },
                 plugins: {
@@ -1316,15 +1302,15 @@ const App = {
                         labels: {
                             color: '#94a3b8',
                             font: { size: 12 },
-                            usePointStyle: true
+                            usePointStyle: false
                         }
                     },
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                const label = context.dataset.label;
                                 const value = context.parsed.y.toFixed(4);
-                                return `${label}: ${value}`;
+                                const color = context.parsed.y >= 0 ? '多頭' : '空頭';
+                                return `MACD: ${value} (${color})`;
                             }
                         }
                     }
