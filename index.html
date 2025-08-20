@@ -1242,12 +1242,22 @@ const App = {
     },
 
     renderMACDChart(symbol, chartData, timeUnit) {
-        const macdCtx = document.getElementById('macd-chart').getContext('2d');
+        const macdCtx = document.getElementById('macd-chart');
+        if (!macdCtx) {
+            console.error('MACD chart canvas element not found');
+            return;
+        }
+        
+        const ctx = macdCtx.getContext('2d');
         const macdData = this.calculateMACDHistory(chartData);
+        
+        // 檢查數據是否有效
+        console.log('MACD Data:', macdData);
+        console.log('Chart Data Length:', chartData.length);
         
         const labels = chartData.map(d => new Date(d.date).getTime());
         
-        this.state.macdChartInstance = new Chart(macdCtx, {
+        this.state.macdChartInstance = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: labels,
@@ -1322,14 +1332,23 @@ const App = {
     calculateMACDHistory(chartData) {
         const closes = chartData.map(d => d.close);
         
+        if (closes.length < 35) {
+            console.warn('Not enough data for MACD calculation');
+            return {
+                macdLine: new Array(chartData.length).fill(0),
+                signalLine: new Array(chartData.length).fill(0),
+                histogram: new Array(chartData.length).fill(0)
+            };
+        }
+        
         // EMA 計算函數
         const calculateEMA = (data, period) => {
             const multiplier = 2 / (period + 1);
-            let ema = [];
+            let ema = new Array(data.length);
             
             // 第一個 EMA 值使用 SMA
             let sum = 0;
-            for (let i = 0; i < Math.min(period, data.length); i++) {
+            for (let i = 0; i < period; i++) {
                 sum += data[i];
             }
             ema[period - 1] = sum / period;
@@ -1347,30 +1366,50 @@ const App = {
         const ema26 = calculateEMA(closes, 26);
         
         // 計算 MACD 線
-        const macdLine = [];
+        const macdLine = new Array(closes.length).fill(null);
         for (let i = 25; i < closes.length; i++) { // 從第26個數據點開始（因為需要26日EMA）
-            macdLine.push(ema12[i] - ema26[i]);
+            if (ema12[i] !== undefined && ema26[i] !== undefined) {
+                macdLine[i] = ema12[i] - ema26[i];
+            }
         }
+        
+        // 過濾出有效的 MACD 值
+        const validMacdValues = macdLine.slice(25).filter(val => val !== null);
         
         // 計算 Signal 線（MACD 的9日EMA）
-        const signalLine = calculateEMA(macdLine, 9);
-        
-        // 計算 Histogram
-        const histogram = [];
-        for (let i = 8; i < macdLine.length; i++) { // 從第9個MACD值開始（因為需要9日EMA）
-            histogram.push(macdLine[i] - signalLine[i]);
+        const signalEMA = calculateEMA(validMacdValues, 9);
+        const signalLine = new Array(closes.length).fill(null);
+        let signalIndex = 0;
+        for (let i = 25; i < closes.length && signalIndex < signalEMA.length; i++) {
+            if (macdLine[i] !== null && signalEMA[signalIndex] !== undefined) {
+                if (signalIndex >= 8) { // 9日EMA 需要至少9個數據點
+                    signalLine[i] = signalEMA[signalIndex];
+                }
+                signalIndex++;
+            }
         }
         
-        // 補齊數據長度，前面填充 null
-        const totalLength = chartData.length;
-        const macdPadded = new Array(totalLength - macdLine.length).fill(null).concat(macdLine);
-        const signalPadded = new Array(totalLength - signalLine.length).fill(null).concat(signalLine);
-        const histogramPadded = new Array(totalLength - histogram.length).fill(null).concat(histogram);
+        // 計算 Histogram
+        const histogram = new Array(closes.length).fill(null);
+        for (let i = 0; i < closes.length; i++) {
+            if (macdLine[i] !== null && signalLine[i] !== null) {
+                histogram[i] = macdLine[i] - signalLine[i];
+            }
+        }
+        
+        // 將 null 值轉換為 0，確保圖表能正常顯示
+        const histogramForChart = histogram.map(val => val === null ? 0 : val);
+        
+        console.log('MACD calculation complete:', {
+            dataLength: chartData.length,
+            validMacdValues: validMacdValues.length,
+            histogramValues: histogramForChart.filter(val => val !== 0).length
+        });
         
         return {
-            macdLine: macdPadded,
-            signalLine: signalPadded,
-            histogram: histogramPadded
+            macdLine: macdLine,
+            signalLine: signalLine,
+            histogram: histogramForChart
         };
     },
 
