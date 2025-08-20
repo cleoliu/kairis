@@ -1136,8 +1136,12 @@ const App = {
     calculateWeeklyData(dailyHistory, maxWeeks = null) {
         if (!dailyHistory || dailyHistory.length < 1) return [];
 
+        // 確保有足夠的日線數據來生成週線
+        console.log('Daily history length for weekly calculation:', dailyHistory.length);
+
         const weeklyMap = new Map();
-        [...dailyHistory].reverse().forEach(day => {
+        // 不要在這裡 reverse，保持原有順序處理
+        dailyHistory.forEach(day => {
             const date = new Date(day.date);
             const weekStartDate = new Date(date);
             weekStartDate.setDate(date.getDate() - date.getDay());
@@ -1156,12 +1160,15 @@ const App = {
                 const week = weeklyMap.get(weekKey);
                 week.high = Math.max(week.high, day.high);
                 week.low = Math.min(week.low, day.low);
-                week.close = day.close;
+                week.close = day.close; // 最後一天的收盤價
                 week.volume += day.volume;
             }
         });
 
-        const weeklyData = Array.from(weeklyMap.values()).reverse();
+        // 轉換為數組並按日期排序（最新的在前面）
+        const weeklyData = Array.from(weeklyMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        console.log('Generated weekly data length:', weeklyData.length);
         
         // 如果指定了最大週數，則限制返回的數據
         if (maxWeeks && weeklyData.length > maxWeeks) {
@@ -1185,9 +1192,16 @@ const App = {
         let timeUnit;
 
         if (this.state.chartTimeframe === 'W') {
-            chartData = this.calculateWeeklyData(history, 50); // 增加到50週以確保有足夠數據顯示MACD
-            macdData = chartData; // 週線使用50筆數據
+            // 週線需要更多的日線數據來生成足夠的週線數據
+            // 使用最多350天（約50週 x 7天）的數據來確保能生成50週的週線數據
+            const dailyDataForWeekly = history.slice(0, Math.min(350, history.length));
+            console.log('Daily data for weekly conversion:', dailyDataForWeekly.length);
+            
+            chartData = this.calculateWeeklyData(dailyDataForWeekly, 50); // 增加到50週以確保有足夠數據顯示MACD
+            macdData = chartData; // 週線使用生成的週線數據
             timeUnit = 'week';
+            
+            console.log('Final weekly chart data length:', chartData.length);
         } else {
             // K線圖顯示最近30天，但MACD計算使用更多數據
             chartData = history.slice(0, 30).reverse();
@@ -1424,6 +1438,13 @@ const App = {
 
     calculateMACDHistory(chartData) {
         const closes = chartData.map(d => d.close);
+        
+        console.log('MACD calculation input:', {
+            chartDataLength: chartData.length,
+            closesLength: closes.length,
+            sampleCloses: closes.slice(0, 5),
+            sampleDates: chartData.slice(0, 5).map(d => d.date)
+        });
         
         if (closes.length < 35) {
             console.warn('Not enough data for MACD calculation, need at least 35 data points, got:', closes.length);
