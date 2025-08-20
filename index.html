@@ -1185,8 +1185,8 @@ const App = {
         let timeUnit;
 
         if (this.state.chartTimeframe === 'W') {
-            chartData = this.calculateWeeklyData(history, 35);
-            macdData = chartData; // 週線使用35筆數據
+            chartData = this.calculateWeeklyData(history, 50); // 增加到50週以確保有足夠數據顯示MACD
+            macdData = chartData; // 週線使用50筆數據
             timeUnit = 'week';
         } else {
             // K線圖顯示最近30天，但MACD計算使用更多數據
