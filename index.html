@@ -474,32 +474,35 @@ const App = {
         this.state.lastUpdated = new Date();
     },
 
-    async fetchStockData(symbol, forceRefresh = false) {
-        if (this.state.stockDataCache[symbol] && !this.state.stockDataCache[symbol].error && !forceRefresh) {
-            return this.state.stockDataCache[symbol];
+    async fetchStockData(symbol, forceRefresh = false, timeframe = null) {
+        const cacheKey = timeframe === '5M' ? `${symbol}_5M` : symbol;
+        
+        if (this.state.stockDataCache[cacheKey] && !this.state.stockDataCache[cacheKey].error && !forceRefresh) {
+            return this.state.stockDataCache[cacheKey];
         }
         
-        this.state.stockDataCache[symbol] = { isLoading: true };
+        this.state.stockDataCache[cacheKey] = { isLoading: true };
 
         try {
-            const response = await fetch(`/api/get-stock-data?symbol=${symbol}`);
+            const url = timeframe ? `/api/get-stock-data?symbol=${symbol}&timeframe=${timeframe}` : `/api/get-stock-data?symbol=${symbol}`;
+            const response = await fetch(url);
             const data = await response.json();
 
             if (!response.ok) {
                 const errorData = { error: data.error || '獲取資料失敗' };
-                this.state.stockDataCache[symbol] = errorData;
+                this.state.stockDataCache[cacheKey] = errorData;
                 return errorData;
             }
             
             const market = symbol.endsWith('.TW') ? 'TW' : 'US';
             const currency = market === 'TW' ? 'NT$' : '$';
             const processedData = { ...data, name: data.name || symbol, market, currency, pe: data.pe || null };
-            this.state.stockDataCache[symbol] = processedData;
+            this.state.stockDataCache[cacheKey] = processedData;
             return processedData;
 
         } catch (error) {
             const errorData = { error: '網路請求失敗' };
-            this.state.stockDataCache[symbol] = errorData;
+            this.state.stockDataCache[cacheKey] = errorData;
             return errorData;
         }
     },
@@ -945,17 +948,17 @@ const App = {
             <div id="detail-tab-content"></div>
         `;
 
-        this.renderDetailTabContent(symbol);
+        await this.renderDetailTabContent(symbol);
 
         detailContainer.querySelectorAll('.detail-tab').forEach(tab => {
-            tab.addEventListener('click', (e) => {
+            tab.addEventListener('click', async (e) => {
                 this.state.detailViewTab = e.currentTarget.dataset.tab;
-                this.renderDetail(symbol);
+                await this.renderDetail(symbol);
             });
         });
     },
 
-    renderDetailTabContent(symbol) {
+    async renderDetailTabContent(symbol) {
         const tabContainer = document.getElementById('detail-tab-content');
         switch(this.state.detailViewTab) {
             case 'analysis':
@@ -964,11 +967,11 @@ const App = {
                 break;
             case 'chart':
                 tabContainer.innerHTML = this.getChartContentHTML(symbol);
-                this.renderAdvancedChart(symbol);
+                await this.renderAdvancedChart(symbol);
                 document.querySelectorAll('.chart-timeframe-btn').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
+                    btn.addEventListener('click', async (e) => {
                         this.state.chartTimeframe = e.currentTarget.dataset.timeframe;
-                        this.renderDetailTabContent(symbol);
+                        await this.renderDetailTabContent(symbol);
                     });
                 });
                 break;
@@ -1016,6 +1019,7 @@ const App = {
                 <div class="flex justify-between items-center mb-3">
                     <h3 class="text-lg font-bold">K 線圖</h3>
                     <div class="flex bg-slate-700 rounded-lg p-1">
+                        <button data-timeframe="5M" class="chart-timeframe-btn px-2 py-1 text-xs font-semibold rounded-md ${this.state.chartTimeframe === '5M' ? 'bg-slate-800 shadow' : ''}">5分線</button>
                         <button data-timeframe="D" class="chart-timeframe-btn px-3 py-1 text-xs font-semibold rounded-md ${this.state.chartTimeframe === 'D' ? 'bg-slate-800 shadow' : ''}">日線</button>
                         <button data-timeframe="W" class="chart-timeframe-btn px-3 py-1 text-xs font-semibold rounded-md ${this.state.chartTimeframe === 'W' ? 'bg-slate-800 shadow' : ''}">週線</button>
                     </div>
@@ -1178,7 +1182,7 @@ const App = {
         return weeklyData;
     },
 
-    renderAdvancedChart(symbol) {
+    async renderAdvancedChart(symbol) {
         if (this.state.advancedChartInstance) {
             this.state.advancedChartInstance.destroy();
         }
@@ -1186,7 +1190,20 @@ const App = {
             this.state.macdChartInstance.destroy();
         }
         
-        const history = this.state.stockDataCache[symbol].history;
+        // 根據時間框架獲取相應的數據
+        let stockData;
+        if (this.state.chartTimeframe === '5M') {
+            stockData = await this.fetchStockData(symbol, true, '5M');
+        } else {
+            stockData = this.state.stockDataCache[symbol];
+        }
+        
+        if (stockData.error) {
+            console.error('無法獲取股票數據:', stockData.error);
+            return;
+        }
+        
+        const history = stockData.history;
         let chartData;
         let macdData; // 用於 MACD 計算的更多數據
         let timeUnit;
@@ -1202,6 +1219,13 @@ const App = {
             timeUnit = 'week';
             
             console.log('Final weekly chart data length:', chartData.length);
+        } else if (this.state.chartTimeframe === '5M') {
+            // 5分線圖顯示當天所有數據
+            chartData = history.reverse(); // 5分線數據已經是正確順序
+            macdData = chartData; // 5分線MACD使用相同數據
+            timeUnit = 'minute';
+            
+            console.log('Final 5min chart data length:', chartData.length);
         } else {
             // K線圖顯示最近30天，但MACD計算使用更多數據
             chartData = history.slice(0, 30).reverse();
@@ -1243,6 +1267,7 @@ const App = {
                         time: { 
                             unit: timeUnit,
                             displayFormats: {
+                                minute: 'HH:mm',
                                 day: 'MM/dd',
                                 week: 'MM/dd'
                             }
@@ -1376,6 +1401,7 @@ const App = {
                         time: { 
                             unit: timeUnit,
                             displayFormats: {
+                                minute: 'HH:mm',
                                 day: 'MM/dd',
                                 week: 'MM/dd'
                             }
@@ -1395,7 +1421,7 @@ const App = {
                 plugins: {
                     legend: {
                         display: true,
-                        position: 'top',
+                        position: 'bottom',
                         labels: {
                             color: '#94a3b8',
                             font: { size: 8 },

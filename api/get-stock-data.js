@@ -23,7 +23,7 @@ export default async function handler(request, response) {
 // 處理從 Finnhub (即時) 和 FMP (歷史) 獲取股價資料的邏輯
 async function handleGetStockData(request, response) {
   try {
-    const { symbol } = request.query;
+    const { symbol, timeframe } = request.query;
     if (!symbol) {
       return response.status(400).json({ error: '必須提供股票代號' });
     }
@@ -36,7 +36,7 @@ async function handleGetStockData(request, response) {
     }
 
     const quoteCacheKey = `quote_finnhub_${symbol}`;
-    const historyCacheKey = `history_fmp_${symbol}`;
+    const historyCacheKey = timeframe === '5M' ? `intraday_fmp_${symbol}` : `history_fmp_${symbol}`;
 
     let quoteData = await kv.get(quoteCacheKey);
     let historyData = await kv.get(historyCacheKey);
@@ -71,27 +71,57 @@ async function handleGetStockData(request, response) {
     // 從 FMP 獲取歷史資料 (若快取中沒有)
     if (!historyData) {
       const fmpSymbol = symbol.replace(/\.US$|\.TW$/, '');
-      const historyUrl = `https://financialmodelingprep.com/api/v3/historical-price-full/${fmpSymbol}?apikey=${fmpApiKey}`;
+      let historyUrl, cacheTime;
+
+      if (timeframe === '5M') {
+        // 5分線數據 - 獲取當天的分時數據
+        const today = new Date().toISOString().split('T')[0];
+        historyUrl = `https://financialmodelingprep.com/api/v3/historical-chart/5min/${fmpSymbol}?from=${today}&to=${today}&apikey=${fmpApiKey}`;
+        cacheTime = 300; // 快取 5 分鐘
+      } else {
+        // 日線/週線數據
+        historyUrl = `https://financialmodelingprep.com/api/v3/historical-price-full/${fmpSymbol}?apikey=${fmpApiKey}`;
+        cacheTime = 86400; // 快取 24 小時
+      }
+
       const historyResponse = await fetch(historyUrl);
 
       if (!historyResponse.ok) {
-        return response.status(500).json({ error: `從 FMP 獲取歷史資料失敗` });
+        return response.status(500).json({ error: `從 FMP 獲取${timeframe === '5M' ? '5分線' : '歷史'}資料失敗` });
       }
       const historyJson = await historyResponse.json();
 
-      if (!historyJson.historical || historyJson.historical.length === 0) {
-        return response.status(404).json({ error: `找不到 FMP 歷史資料: ${symbol}` });
+      if (timeframe === '5M') {
+        // 5分線數據處理
+        if (!historyJson || historyJson.length === 0) {
+          return response.status(404).json({ error: `找不到 FMP 5分線資料: ${symbol}` });
+        }
+        
+        historyData = historyJson.slice(0, 78).reverse().map(d => ({ // 當天最多78個5分鐘K線 (6.5小時)
+          date: d.date,
+          open: d.open,
+          high: d.high,
+          low: d.low,
+          close: d.close,
+          volume: d.volume
+        }));
+      } else {
+        // 日線/週線數據處理
+        if (!historyJson.historical || historyJson.historical.length === 0) {
+          return response.status(404).json({ error: `找不到 FMP 歷史資料: ${symbol}` });
+        }
+        
+        historyData = historyJson.historical.slice(0, 250).map(d => ({
+          date: d.date,
+          open: d.open,
+          high: d.high,
+          low: d.low,
+          close: d.close,
+          volume: d.volume
+        }));
       }
       
-      historyData = historyJson.historical.slice(0, 250).map(d => ({
-        date: d.date,
-        open: d.open,
-        high: d.high,
-        low: d.low,
-        close: d.close,
-        volume: d.volume
-      }));
-      await kv.set(historyCacheKey, historyData, { ex: 86400 }); // 快取 24 小時
+      await kv.set(historyCacheKey, historyData, { ex: cacheTime });
     }
 
     const processedData = {
