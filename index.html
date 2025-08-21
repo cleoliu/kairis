@@ -451,7 +451,7 @@ const App = {
                 const data = doc.data();
                 this.state.watchlist = Array.isArray(data.watchlist) ? data.watchlist : [];
             } else {
-                this.state.watchlist = ['AAPL.US', '2330.TW'];
+                this.state.watchlist = ['AAPL.US'];
                 docRef.set({ watchlist: this.state.watchlist });
             }
             this.fetchAllWatchlistData();
@@ -462,7 +462,7 @@ const App = {
     
     loadWatchlistFromLocalStorage() {
         const saved = localStorage.getItem('stockwise_watchlist');
-        this.state.watchlist = saved ? JSON.parse(saved) : ['AAPL.US', '2330.TW'];
+        this.state.watchlist = saved ? JSON.parse(saved) : ['AAPL.US'];
         this.fetchAllWatchlistData();
     },
 
