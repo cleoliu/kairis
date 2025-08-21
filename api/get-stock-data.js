@@ -83,7 +83,7 @@ async function handleGetStockData(request, response) {
         return response.status(404).json({ error: `找不到 FMP 歷史資料: ${symbol}` });
       }
       
-      historyData = historyJson.historical.slice(0, 60).map(d => ({
+      historyData = historyJson.historical.slice(0, 250).map(d => ({
         date: d.date,
         open: d.open,
         high: d.high,
