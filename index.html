@@ -1240,9 +1240,18 @@ const App = {
                 scales: {
                     x: {
                         type: 'time',
-                        time: { unit: timeUnit },
+                        time: { 
+                            unit: timeUnit,
+                            displayFormats: {
+                                day: 'MM/dd',
+                                week: 'MM/dd'
+                            }
+                        },
                         grid: { color: 'rgba(71, 85, 105, 0.5)' },
-                        ticks: { color: '#94a3b8' }
+                        ticks: { 
+                            color: '#94a3b8',
+                            maxTicksLimit: 8
+                        }
                     },
                     y: { 
                         grid: { color: 'rgba(71, 85, 105, 0.5)' },
@@ -1364,9 +1373,18 @@ const App = {
                 scales: {
                     x: {
                         type: 'time',
-                        time: { unit: timeUnit },
+                        time: { 
+                            unit: timeUnit,
+                            displayFormats: {
+                                day: 'MM/dd',
+                                week: 'MM/dd'
+                            }
+                        },
                         grid: { color: 'rgba(71, 85, 105, 0.5)' },
-                        ticks: { color: '#94a3b8' }
+                        ticks: { 
+                            color: '#94a3b8',
+                            maxTicksLimit: 8
+                        }
                     },
                     y: {
                         grid: { color: 'rgba(71, 85, 105, 0.5)' },
