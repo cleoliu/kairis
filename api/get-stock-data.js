@@ -29,10 +29,10 @@ async function handleGetStockData(request, response) {
     }
 
     const finnhubApiKey = process.env.FINNHUB_API_KEY;
-    const fmpApiKey = process.env.FMP_API_KEY;
+    const alphaVantageApiKey = process.env.ALPHA_VANTAGE_API_KEY;
 
-    if (!finnhubApiKey || !fmpApiKey) {
-      return response.status(500).json({ error: 'FINNHUB_API_KEY 或 FMP_API_KEY 未設定' });
+    if (!finnhubApiKey) {
+      return response.status(500).json({ error: 'FINNHUB_API_KEY 未設定' });
     }
 
     const quoteCacheKey = `quote_finnhub_${symbol}`;
@@ -68,99 +68,114 @@ async function handleGetStockData(request, response) {
       await kv.set(quoteCacheKey, quoteData, { ex: 60 }); // 快取 1 分鐘
     }
 
-    // 從 FMP 獲取歷史資料 (若快取中沒有)
+    // 從多個數據源獲取歷史資料 (若快取中沒有)
     if (!historyData) {
-      const fmpSymbol = symbol.replace(/\.US$|\.TW$/, '');
-      let historyUrl, cacheTime;
+      const cleanSymbol = symbol.replace(/\.US$|\.TW$/, '');
+      let cacheTime;
 
       if (timeframe === '5M') {
-        // 5分線數據 - 嘗試不同的API端點
-        const today = new Date().toISOString().split('T')[0];
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().split('T')[0];
-        
-        // 首先嘗試當天數據，如果失敗則嘗試昨天數據
-        historyUrl = `https://financialmodelingprep.com/api/v3/historical-chart/5min/${fmpSymbol}?from=${yesterdayStr}&to=${today}&apikey=${fmpApiKey}`;
+        // 5分線數據 - 優先使用Finnhub
         cacheTime = 300; // 快取 5 分鐘
         
-        console.log(`Fetching 5min data for ${fmpSymbol} from ${yesterdayStr} to ${today}`);
-      } else {
-        // 日線/週線數據
-        historyUrl = `https://financialmodelingprep.com/api/v3/historical-price-full/${fmpSymbol}?apikey=${fmpApiKey}`;
-        cacheTime = 86400; // 快取 24 小時
-      }
-
-      const historyResponse = await fetch(historyUrl);
-
-      if (!historyResponse.ok) {
-        return response.status(500).json({ error: `從 FMP 獲取${timeframe === '5M' ? '5分線' : '歷史'}資料失敗` });
-      }
-      const historyJson = await historyResponse.json();
-
-      if (timeframe === '5M') {
-        // 5分線數據處理
-        console.log('5min API response:', { length: historyJson?.length, sample: historyJson?.slice(0, 2) });
+        console.log(`Fetching 5min data for ${cleanSymbol}`);
         
-        if (!historyJson || historyJson.length === 0) {
-          // 如果5分線數據不可用，使用Finnhub的分時數據作為備用
-          console.log(`No FMP 5min data available for ${fmpSymbol}, trying Finnhub intraday...`);
-          
-          // 嘗試使用Finnhub的分時數據
-          const finnhubSymbol = symbol.replace(/\.US$|\.TW$/, '');
-          const intradayUrl = `https://finnhub.io/api/v1/stock/candle?symbol=${finnhubSymbol}&resolution=5&from=${Math.floor(Date.now()/1000) - 86400}&to=${Math.floor(Date.now()/1000)}&token=${finnhubApiKey}`;
-          
-          try {
-            const intradayResponse = await fetch(intradayUrl);
-            if (intradayResponse.ok) {
-              const intradayJson = await intradayResponse.json();
+        // 使用Finnhub的分時數據作為主要來源
+        const intradayUrl = `https://finnhub.io/api/v1/stock/candle?symbol=${cleanSymbol}&resolution=5&from=${Math.floor(Date.now()/1000) - 86400}&to=${Math.floor(Date.now()/1000)}&token=${finnhubApiKey}`;
+        
+        try {
+          const intradayResponse = await fetch(intradayUrl);
+          if (intradayResponse.ok) {
+            const intradayJson = await intradayResponse.json();
+            
+            if (intradayJson.s === 'ok' && intradayJson.c?.length > 0) {
+              console.log('Using Finnhub intraday data:', intradayJson.c.length, 'points');
               
-              if (intradayJson.s === 'ok' && intradayJson.c?.length > 0) {
-                console.log('Using Finnhub intraday data:', intradayJson.c.length, 'points');
-                
-                historyData = intradayJson.c.map((close, i) => ({
-                  date: new Date(intradayJson.t[i] * 1000).toISOString(),
-                  open: intradayJson.o[i],
-                  high: intradayJson.h[i],
-                  low: intradayJson.l[i],
-                  close: close,
-                  volume: intradayJson.v[i]
-                })).slice(-78); // 最多78個5分鐘K線
-              } else {
-                return response.status(404).json({ error: `找不到 ${symbol} 的5分線資料 (FMP和Finnhub都無數據)` });
-              }
+              historyData = intradayJson.c.map((close, i) => ({
+                date: new Date(intradayJson.t[i] * 1000).toISOString(),
+                open: intradayJson.o[i],
+                high: intradayJson.h[i],
+                low: intradayJson.l[i],
+                close: close,
+                volume: intradayJson.v[i]
+              })).slice(-78); // 最多78個5分鐘K線
             } else {
-              return response.status(404).json({ error: `找不到 FMP 5分線資料: ${symbol}` });
+              return response.status(404).json({ error: `找不到 ${symbol} 的5分線資料` });
+            }
+          } else {
+            return response.status(404).json({ error: `從 Finnhub 獲取分時資料失敗: ${symbol}` });
+          }
+        } catch (error) {
+          console.error('Finnhub intraday fetch error:', error);
+          return response.status(500).json({ error: `獲取5分線資料時發生錯誤: ${symbol}` });
+        }
+      } else {
+        // 日線數據 - 使用Alpha Vantage作為主要來源，Finnhub作為備用
+        cacheTime = 86400; // 快取 24 小時
+        
+        const alphaVantageApiKey = process.env.ALPHA_VANTAGE_API_KEY;
+        
+        if (alphaVantageApiKey) {
+          // 嘗試Alpha Vantage
+          try {
+            const alphaUrl = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${cleanSymbol}&outputsize=compact&apikey=${alphaVantageApiKey}`;
+            const alphaResponse = await fetch(alphaUrl);
+            
+            if (alphaResponse.ok) {
+              const alphaJson = await alphaResponse.json();
+              
+              if (alphaJson['Time Series (Daily)']) {
+                const timeSeries = alphaJson['Time Series (Daily)'];
+                historyData = Object.entries(timeSeries)
+                  .slice(0, 250)
+                  .map(([date, data]) => ({
+                    date: date,
+                    open: parseFloat(data['1. open']),
+                    high: parseFloat(data['2. high']),
+                    low: parseFloat(data['3. low']),
+                    close: parseFloat(data['4. close']),
+                    volume: parseInt(data['5. volume'])
+                  }));
+                
+                console.log('Using Alpha Vantage data:', historyData.length, 'points');
+              }
             }
           } catch (error) {
-            console.error('Finnhub intraday fetch error:', error);
-            return response.status(404).json({ error: `找不到 FMP 5分線資料: ${symbol}` });
+            console.error('Alpha Vantage fetch error:', error);
           }
-        } else {
-          historyData = historyJson.slice(0, 78).reverse().map(d => ({ // 當天最多78個5分鐘K線 (6.5小時)
-            date: d.date,
-            open: d.open,
-            high: d.high,
-            low: d.low,
-            close: d.close,
-            volume: d.volume
-          }));
-        }
-      } else {
-        // 日線/週線數據處理
-        if (!historyJson.historical || historyJson.historical.length === 0) {
-          return response.status(404).json({ error: `找不到 FMP 歷史資料: ${symbol}` });
         }
         
-        historyData = historyJson.historical.slice(0, 250).map(d => ({
-          date: d.date,
-          open: d.open,
-          high: d.high,
-          low: d.low,
-          close: d.close,
-          volume: d.volume
-        }));
+        // 如果Alpha Vantage失敗，使用Finnhub作為備用
+        if (!historyData) {
+          try {
+            const finnhubHistoryUrl = `https://finnhub.io/api/v1/stock/candle?symbol=${cleanSymbol}&resolution=D&from=${Math.floor(Date.now()/1000) - (250 * 24 * 60 * 60)}&to=${Math.floor(Date.now()/1000)}&token=${finnhubApiKey}`;
+            const finnhubResponse = await fetch(finnhubHistoryUrl);
+            
+            if (finnhubResponse.ok) {
+              const finnhubJson = await finnhubResponse.json();
+              
+              if (finnhubJson.s === 'ok' && finnhubJson.c?.length > 0) {
+                historyData = finnhubJson.c.map((close, i) => ({
+                  date: new Date(finnhubJson.t[i] * 1000).toISOString().split('T')[0],
+                  open: finnhubJson.o[i],
+                  high: finnhubJson.h[i],
+                  low: finnhubJson.l[i],
+                  close: close,
+                  volume: finnhubJson.v[i]
+                })).reverse(); // Finnhub返回的數據是倒序的
+                
+                console.log('Using Finnhub daily data as fallback:', historyData.length, 'points');
+              }
+            }
+          } catch (error) {
+            console.error('Finnhub daily fetch error:', error);
+          }
+        }
+        
+        if (!historyData) {
+          return response.status(404).json({ error: `找不到 ${symbol} 的歷史資料` });
+        }
       }
+
       
       await kv.set(historyCacheKey, historyData, { ex: cacheTime });
     }
