@@ -28,6 +28,11 @@ async function handleGetStockData(request, response) {
       return response.status(400).json({ error: '必須提供股票代號' });
     }
 
+    // 只支援美股，拒絕台股請求
+    if (symbol.includes('.TW')) {
+      return response.status(400).json({ error: '目前暫不支援台股查詢' });
+    }
+
     // Log environment for debugging
     console.log('Environment check:', {
       FINNHUB_API_KEY: !!process.env.FINNHUB_API_KEY,
@@ -61,7 +66,7 @@ async function handleGetStockData(request, response) {
 
     // 從 Finnhub 獲取即時報價 (若快取中沒有)
     if (!quoteData) {
-      const finnhubSymbol = symbol.replace(/\.US$|\.TW$/, '');
+      const finnhubSymbol = symbol.replace(/\.US$/, '');
       const profileUrl = `https://finnhub.io/api/v1/stock/profile2?symbol=${finnhubSymbol}&token=${finnhubApiKey}`;
       const finnhubQuoteUrl = `https://finnhub.io/api/v1/quote?symbol=${finnhubSymbol}&token=${finnhubApiKey}`;
       
@@ -96,7 +101,7 @@ async function handleGetStockData(request, response) {
 
     // 從多個數據源獲取歷史資料 (若快取中沒有)
     if (!historyData) {
-      const cleanSymbol = symbol.replace(/\.US$|\.TW$/, '');
+      const cleanSymbol = symbol.replace(/\.US$/, '');
       let cacheTime;
 
       if (timeframe === '5M') {
@@ -249,7 +254,7 @@ async function handleGetNews(request, response) {
         if (!symbol) {
             return response.status(400).json({ error: '必須提供股票代號' });
         }
-        const apiSymbol = symbol.replace(/\.US$|\.TW$/, '');
+        const apiSymbol = symbol.replace(/\.US$/, '');
 
         const finnhubApiKey = process.env.FINNHUB_API_KEY;
         if (!finnhubApiKey) {
