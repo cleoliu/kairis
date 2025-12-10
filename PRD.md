@@ -32,11 +32,11 @@
 #### 3.2.1 市場分頁:
 
 - 提供「美股」和「台股」兩個子分頁，使用者可以輕鬆切換，專注於特定市場的股票列表。預設顯示「美股」。
-- **注意**: 目前台股功能受 API 限制，建議專注使用美股功能。
+- **重要**: 目前僅支援美股，台股功能已暫時停用。嘗試新增台股會顯示錯誤訊息。
 
 #### 3.2.2 新增/刪除股票:
 
-- **新增**: 提供「+」按鈕，彈出視窗讓使用者輸入股票代號。系統會根據當前分頁（美股/台股）自動補上 .US 或 .TW 後綴。
+- **新增**: 提供「+」按鈕，彈出視窗讓使用者輸入股票代號。系統會自動補上 .US 後綴（僅支援美股）。
 - **股票驗證**: 系統會驗證股票代號的有效性，無效或不支援的股票會顯示錯誤訊息。
 - **刪除**: 每張股票卡片右上角提供「x」按鈕。點擊後會彈出確認提示框，防止誤刪。
 
@@ -55,7 +55,7 @@
 
 #### 3.3.1 市場分頁:
 
-- 同樣提供「美股」和「台股」兩個子分頁，讓機會掃描更有針對性。
+- 同樣提供「美股」和「台股」兩個子分頁，但目前僅支援美股掃描。
 
 #### 3.3.2 機會卡片:
 
@@ -96,7 +96,7 @@
 - **快取系統**: [Vercel KV](https://vercel.com/docs/storage/vercel-kv) (基於 Redis) 用於提升 API 性能。
 - **API 組合**:
   - [Finnhub](https://finnhub.io/): 用於獲取美股即時報價與公司新聞（免費版限制：無歷史 K 線數據）。
-  - [Alpha Vantage](https://www.alphavantage.co/): 主要用於獲取美股歷史 K 線數據（免費版限制：每分鐘 5 次，每天 25 次）。
+  - [Twelve Data](https://twelvedata.com/): 主要用於獲取美股歷史 K 線數據（免費版限制：每日 800 次請求）。
   - [Google Gemini API](https://ai.google.dev/): 用於 AI 智慧解讀與新聞標題翻譯。
 - **部署**: 程式碼託管於 GitHub，並透過 Vercel 進行自動化部署。
 
@@ -110,7 +110,7 @@
 - [Vercel](https://vercel.com/)
 - [Google Firebase](https://firebase.google.com/)
 - [Finnhub](https://finnhub.io/)
-- [Alpha Vantage](https://www.alphavantage.co/)
+- [Twelve Data](https://twelvedata.com/)
 - [Google AI Studio (for Gemini API)](https://aistudio.google.com/)
 
 #### 2. 專案設定
@@ -127,7 +127,7 @@
     - 在 Vercel 上從您的 GitHub 儲存庫匯入專案。
     - 在專案設定的「Environment Variables」中，新增以下三個金鑰：
       - `FINNHUB_API_KEY`: 從 Finnhub 獲取的 API 金鑰
-      - `ALPHA_VANTAGE_API_KEY`: 從 Alpha Vantage 獲取的 API 金鑰  
+      - `TWELVE_DATA_API_KEY`: 從 Twelve Data 獲取的 API 金鑰  
       - `GEMINI_API_KEY`: 從 Google AI Studio 獲取的 API 金鑰
     - 設定 Vercel KV 快取:
       - 「Storage」分頁，選擇「Upstash」>「Upstash for Redis」，點擊「Create」按鈕
@@ -145,10 +145,10 @@
 - ❌ **不支援**: 台股、港股等非美國市場
 - ⚠️ **注意**: 5 分線功能可能無法使用
 
-#### Alpha Vantage API (免費版)  
-- ✅ **支援功能**: 美股歷史日線數據
-- ⚠️ **限制**: 每分鐘 5 次請求，每天 25 次請求
-- ❌ **不支援**: 台股、OTC 股票、特殊格式股票代號
+#### Twelve Data API (免費版)  
+- ✅ **支援功能**: 美股歷史日線數據、完整 OHLCV 資料
+- ⚠️ **限制**: 每日 800 次請求
+- ❌ **不支援**: 台股、部分 OTC 股票
 - 📊 **數據範圍**: 主要支援在 NYSE、NASDAQ 交易的股票
 
 #### Google Gemini API
@@ -166,7 +166,7 @@
 - 新上市或交易量極低的股票
 
 #### ❌ 不支援的股票
-- 台股 (2330.TW 等) - API 限制
+- **台股** (2330.TW 等) - 已停用支援，系統會自動阻止台股請求
 - OTC 市場股票  
 - Penny stocks
 - 非美國交易所股票
@@ -174,8 +174,9 @@
 ### 6.3 錯誤處理機制
 
 應用程式已實作以下錯誤處理：
+- **台股請求**: 前端和後端雙重阻止，顯示「目前暫不支援台股查詢」
 - **股票不存在**: 顯示「股票代號不存在或不支援」
-- **無歷史資料**: 使用當前報價建立基本歷史數據點
+- **無歷史資料**: 使用當前報價建立基本歷史數據點，優化技術指標計算
 - **API 限制**: 顯示具體錯誤原因和建議
 - **快取失敗**: 自動跳過快取，直接從 API 獲取數據
 

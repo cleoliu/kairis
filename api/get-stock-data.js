@@ -36,14 +36,13 @@ async function handleGetStockData(request, response) {
     // Log environment for debugging
     console.log('Environment check:', {
       FINNHUB_API_KEY: !!process.env.FINNHUB_API_KEY,
-      ALPHA_VANTAGE_API_KEY: !!process.env.ALPHA_VANTAGE_API_KEY,
+      TWELVE_DATA_API_KEY: !!process.env.TWELVE_DATA_API_KEY,
       KV_URL: !!process.env.KV_URL,
       KV_REST_API_URL: !!process.env.KV_REST_API_URL,
       KV_REST_API_TOKEN: !!process.env.KV_REST_API_TOKEN
     });
 
     const finnhubApiKey = process.env.FINNHUB_API_KEY;
-    const alphaVantageApiKey = process.env.ALPHA_VANTAGE_API_KEY;
 
     if (!finnhubApiKey) {
       return response.status(500).json({ error: 'FINNHUB_API_KEY 未設定' });
