@@ -449,7 +449,9 @@ const App = {
         this.state.watchlistUnsubscribe = docRef.onSnapshot(doc => {
             if (doc.exists) {
                 const data = doc.data();
-                this.state.watchlist = Array.isArray(data.watchlist) ? data.watchlist : [];
+                let watchlistData = Array.isArray(data.watchlist) ? data.watchlist : [];
+                // 過濾掉台股，只保留美股
+                this.state.watchlist = watchlistData.filter(symbol => !symbol.includes('.TW'));
             } else {
                 this.state.watchlist = ['AAPL.US'];
                 docRef.set({ watchlist: this.state.watchlist });
@@ -462,7 +464,9 @@ const App = {
     
     loadWatchlistFromLocalStorage() {
         const saved = localStorage.getItem('stockwise_watchlist');
-        this.state.watchlist = saved ? JSON.parse(saved) : ['AAPL.US'];
+        let savedWatchlist = saved ? JSON.parse(saved) : ['AAPL.US'];
+        // 過濾掉台股，只保留美股
+        this.state.watchlist = savedWatchlist.filter(symbol => !symbol.includes('.TW'));
         this.fetchAllWatchlistData();
     },
 
@@ -513,7 +517,10 @@ const App = {
             this.render();
         }
 
-        const symbolsToFetch = this.state.watchlist.filter(symbol => !this.state.stockDataCache[symbol] || forceRefresh);
+        // 過濾掉台股，只處理美股
+        const symbolsToFetch = this.state.watchlist
+            .filter(symbol => !symbol.includes('.TW'))
+            .filter(symbol => !this.state.stockDataCache[symbol] || forceRefresh);
         
         const promises = symbolsToFetch.map(symbol => this.fetchStockData(symbol, forceRefresh));
 
@@ -1685,6 +1692,12 @@ const App = {
             symbol += suffix;
         }
 
+        // 拒絕台股請求
+        if (symbol.includes('.TW')) {
+            feedbackEl.textContent = '目前暫不支援台股，請輸入美股代號';
+            return;
+        }
+
         if (this.state.watchlist.includes(symbol)) {
             feedbackEl.textContent = '此股票已在自選清單中。';
             return;
@@ -1754,28 +1767,33 @@ const App = {
 
     calculateIndicators(stockData) {
         const history = stockData.history;
-        if (!history || history.length < 35) return { ma3: 0, ma5: 0, ma10: 0, ma20: 0, ma30: 0, rsi: 50, bb: { upper: 0, middle: 0, lower: 0 }, macd: { macd: 0, signal: 0, histogram: 0 }, high30: 0, low30: 0, avgVol5: 0 };
+        if (!history || history.length < 10) return { ma3: stockData.price || 0, ma5: stockData.price || 0, ma10: stockData.price || 0, ma20: stockData.price || 0, ma30: stockData.price || 0, rsi: 50, bb: { upper: 0, middle: 0, lower: 0 }, macd: { macd: 0, signal: 0, histogram: 0 }, high30: 0, low30: 0, avgVol5: 0 };
         const closes = history.map(d => d.close).reverse(); // Oldest to newest
         const volumes = history.map(d => d.volume).reverse();
         
         const sum = (arr) => arr.reduce((a, b) => a + b, 0);
         const avg = (arr) => sum(arr) / arr.length;
-        const ma = (period) => avg(closes.slice(-period));
+        const ma = (period) => closes.length >= period ? avg(closes.slice(-period)) : (closes.length > 0 ? avg(closes) : stockData.price || 0);
         
-        const high30 = Math.max(...history.slice(0, 30).map(d => d.high));
-        const low30 = Math.min(...history.slice(0, 30).map(d => d.low));
-        const avgVol5 = avg(volumes.slice(-5));
+        const high30 = history.length >= 30 ? Math.max(...history.slice(0, 30).map(d => d.high)) : (history.length > 0 ? Math.max(...history.map(d => d.high)) : stockData.high || stockData.price || 0);
+        const low30 = history.length >= 30 ? Math.min(...history.slice(0, 30).map(d => d.low)) : (history.length > 0 ? Math.min(...history.map(d => d.low)) : stockData.low || stockData.price || 0);
+        const avgVol5 = volumes.length >= 5 ? avg(volumes.slice(-5)) : (volumes.length > 0 ? avg(volumes) : 0);
 
         let gains = 0, losses = 0;
-        for (let i = closes.length - 14; i < closes.length; i++) {
-            const diff = closes[i] - closes[i-1];
-            if (diff > 0) gains += diff; else losses -= diff;
+        const rsiPeriod = Math.min(14, closes.length - 1);
+        if (rsiPeriod > 0) {
+            for (let i = closes.length - rsiPeriod; i < closes.length; i++) {
+                const diff = closes[i] - closes[i-1];
+                if (diff > 0) gains += diff; else losses -= diff;
+            }
         }
-        const rs = (gains / 14) / (losses / 14);
-        const rsi = isFinite(rs) ? 100 - (100 / (1 + rs)) : (losses === 0 ? 100 : 0);
+        const rs = (rsiPeriod > 0 && losses > 0) ? (gains / rsiPeriod) / (losses / rsiPeriod) : 1;
+        const rsi = isFinite(rs) ? 100 - (100 / (1 + rs)) : 50;
 
         const ma20 = ma(20);
-        const stdDev = Math.sqrt(avg(closes.slice(-20).map(p => Math.pow(p - ma20, 2))));
+        const bbPeriod = Math.min(20, closes.length);
+        const bbCloses = closes.slice(-bbPeriod);
+        const stdDev = bbCloses.length > 1 ? Math.sqrt(avg(bbCloses.map(p => Math.pow(p - ma20, 2)))) : 0;
         const bb = { upper: ma20 + (stdDev * 2), middle: ma20, lower: ma20 - (stdDev * 2) };
 
         // MACD Calculation
