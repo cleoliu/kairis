@@ -423,12 +423,18 @@ const App = {
                 this.state.user = user;
                 if (user) {
                     this.state.userId = user.uid;
+                    console.log("用戶已登入:", user.uid);
                     this.loadWatchlistFromFirestore();
                 } else {
-                    this.state.auth.signInAnonymously().catch(error => {
-                        console.error("匿名登入失敗:", error);
-                        this.loadWatchlistFromLocalStorage();
-                    });
+                    console.log("開始匿名登入...");
+                    this.state.auth.signInAnonymously()
+                        .then(() => {
+                            console.log("匿名登入成功");
+                        })
+                        .catch(error => {
+                            console.error("匿名登入失敗:", error);
+                            this.loadWatchlistFromLocalStorage();
+                        });
                 }
                 this.renderHeader();
             });
@@ -442,8 +448,13 @@ const App = {
         if (this.state.watchlistUnsubscribe) {
             this.state.watchlistUnsubscribe();
         }
-        if (!this.state.userId) return;
+        if (!this.state.db || !this.state.userId) {
+            console.log("Firebase 或用戶 ID 未準備好，使用本地存儲");
+            this.loadWatchlistFromLocalStorage();
+            return;
+        }
 
+        console.log("從 Firestore 載入 watchlist，用戶 ID:", this.state.userId);
         const docRef = this.state.db.collection('users').doc(this.state.userId);
         
         this.state.watchlistUnsubscribe = docRef.onSnapshot(doc => {
