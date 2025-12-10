@@ -67,13 +67,15 @@ async function handleGetStockData(request, response) {
       
       const [profileResponse, finnhubQuoteResponse] = await Promise.all([fetch(profileUrl), fetch(finnhubQuoteUrl)]);
       if (!profileResponse.ok || !finnhubQuoteResponse.ok) {
+        console.warn(`Finnhub API request failed for ${symbol}, status: ${profileResponse.status}, ${finnhubQuoteResponse.status}`);
         return response.status(404).json({ error: `找不到 Finnhub 即時報價資料: ${symbol}` });
       }
       const profileJson = await profileResponse.json();
       const quoteJson = await finnhubQuoteResponse.json();
 
       if (quoteJson.c === 0 && !profileJson.name) {
-         return response.status(404).json({ error: `找不到 Finnhub 資料: ${symbol}` });
+        console.warn(`No valid data from Finnhub for ${symbol}: quote=${quoteJson.c}, name=${profileJson.name}`);
+        return response.status(404).json({ error: `找不到 ${symbol} 的資料，可能此股票代號不存在或不支援` });
       }
       quoteData = {
           name: profileJson.name || symbol,
@@ -123,9 +125,11 @@ async function handleGetStockData(request, response) {
                 volume: intradayJson.v[i]
               })).slice(-78); // 最多78個5分鐘K線
             } else {
-              return response.status(404).json({ error: `找不到 ${symbol} 的5分線資料` });
+              console.warn(`No intraday data available for ${symbol}`);
+              return response.status(404).json({ error: `找不到 ${symbol} 的5分線資料，可能此股票不支援分時數據` });
             }
           } else {
+            console.warn(`Finnhub intraday API request failed for ${symbol}, status: ${intradayResponse.status}`);
             return response.status(404).json({ error: `從 Finnhub 獲取分時資料失敗: ${symbol}` });
           }
         } catch (error) {
@@ -196,7 +200,16 @@ async function handleGetStockData(request, response) {
         }
         
         if (!historyData) {
-          return response.status(404).json({ error: `找不到 ${symbol} 的歷史資料` });
+          console.warn(`No historical data found for ${symbol}, continuing with quote data only`);
+          // 創建一個包含當前報價的歷史數據點
+          historyData = [{
+            date: new Date().toISOString().split('T')[0],
+            open: quoteData.price,
+            high: quoteData.high || quoteData.price,
+            low: quoteData.low || quoteData.price,
+            close: quoteData.price,
+            volume: 0
+          }];
         }
       }
 
