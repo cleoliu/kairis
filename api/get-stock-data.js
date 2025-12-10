@@ -140,31 +140,33 @@ async function handleGetStockData(request, response) {
         // 日線數據 - 改用 Twelve Data 作為主要來源
         cacheTime = 86400; // 快取 24 小時
         
-        const twelveDataApiKey = 'b7999ba99f274270ae64403a7a5428ec';
+        const twelveDataApiKey = process.env.TWELVE_DATA_API_KEY;
         
         // 使用 Twelve Data API 獲取歷史數據
-        try {
-          const twelveDataUrl = `https://api.twelvedata.com/time_series?symbol=${cleanSymbol}&interval=1day&outputsize=250&apikey=${twelveDataApiKey}`;
-          const twelveResponse = await fetch(twelveDataUrl);
-          
-          if (twelveResponse.ok) {
-            const twelveJson = await twelveResponse.json();
+        if (twelveDataApiKey) {
+          try {
+            const twelveDataUrl = `https://api.twelvedata.com/time_series?symbol=${cleanSymbol}&interval=1day&outputsize=250&apikey=${twelveDataApiKey}`;
+            const twelveResponse = await fetch(twelveDataUrl);
             
-            if (twelveJson.values && Array.isArray(twelveJson.values)) {
-              historyData = twelveJson.values.map(item => ({
-                date: item.datetime,
-                open: parseFloat(item.open),
-                high: parseFloat(item.high),
-                low: parseFloat(item.low),
-                close: parseFloat(item.close),
-                volume: parseInt(item.volume)
-              })).reverse(); // Twelve Data 返回最新的在前，需要反轉
+            if (twelveResponse.ok) {
+              const twelveJson = await twelveResponse.json();
               
-              console.log('Using Twelve Data:', historyData.length, 'points');
+              if (twelveJson.values && Array.isArray(twelveJson.values)) {
+                historyData = twelveJson.values.map(item => ({
+                  date: item.datetime,
+                  open: parseFloat(item.open),
+                  high: parseFloat(item.high),
+                  low: parseFloat(item.low),
+                  close: parseFloat(item.close),
+                  volume: parseInt(item.volume)
+                })).reverse(); // Twelve Data 返回最新的在前，需要反轉
+                
+                console.log('Using Twelve Data:', historyData.length, 'points');
+              }
             }
+          } catch (error) {
+            console.error('Twelve Data fetch error:', error);
           }
-        } catch (error) {
-          console.error('Twelve Data fetch error:', error);
         }
         
         // 如果 Twelve Data 失敗，使用 Finnhub 作為備用
