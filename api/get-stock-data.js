@@ -137,42 +137,37 @@ async function handleGetStockData(request, response) {
           return response.status(500).json({ error: `獲取5分線資料時發生錯誤: ${symbol}` });
         }
       } else {
-        // 日線數據 - 使用Alpha Vantage作為主要來源，Finnhub作為備用
+        // 日線數據 - 改用 Twelve Data 作為主要來源
         cacheTime = 86400; // 快取 24 小時
         
-        const alphaVantageApiKey = process.env.ALPHA_VANTAGE_API_KEY;
+        const twelveDataApiKey = 'b7999ba99f274270ae64403a7a5428ec';
         
-        if (alphaVantageApiKey) {
-          // 嘗試Alpha Vantage
-          try {
-            const alphaUrl = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${cleanSymbol}&outputsize=compact&apikey=${alphaVantageApiKey}`;
-            const alphaResponse = await fetch(alphaUrl);
+        // 使用 Twelve Data API 獲取歷史數據
+        try {
+          const twelveDataUrl = `https://api.twelvedata.com/time_series?symbol=${cleanSymbol}&interval=1day&outputsize=250&apikey=${twelveDataApiKey}`;
+          const twelveResponse = await fetch(twelveDataUrl);
+          
+          if (twelveResponse.ok) {
+            const twelveJson = await twelveResponse.json();
             
-            if (alphaResponse.ok) {
-              const alphaJson = await alphaResponse.json();
+            if (twelveJson.values && Array.isArray(twelveJson.values)) {
+              historyData = twelveJson.values.map(item => ({
+                date: item.datetime,
+                open: parseFloat(item.open),
+                high: parseFloat(item.high),
+                low: parseFloat(item.low),
+                close: parseFloat(item.close),
+                volume: parseInt(item.volume)
+              })).reverse(); // Twelve Data 返回最新的在前，需要反轉
               
-              if (alphaJson['Time Series (Daily)']) {
-                const timeSeries = alphaJson['Time Series (Daily)'];
-                historyData = Object.entries(timeSeries)
-                  .slice(0, 250)
-                  .map(([date, data]) => ({
-                    date: date,
-                    open: parseFloat(data['1. open']),
-                    high: parseFloat(data['2. high']),
-                    low: parseFloat(data['3. low']),
-                    close: parseFloat(data['4. close']),
-                    volume: parseInt(data['5. volume'])
-                  }));
-                
-                console.log('Using Alpha Vantage data:', historyData.length, 'points');
-              }
+              console.log('Using Twelve Data:', historyData.length, 'points');
             }
-          } catch (error) {
-            console.error('Alpha Vantage fetch error:', error);
           }
+        } catch (error) {
+          console.error('Twelve Data fetch error:', error);
         }
         
-        // 如果Alpha Vantage失敗，使用Finnhub作為備用
+        // 如果 Twelve Data 失敗，使用 Finnhub 作為備用
         if (!historyData) {
           try {
             const finnhubHistoryUrl = `https://finnhub.io/api/v1/stock/candle?symbol=${cleanSymbol}&resolution=D&from=${Math.floor(Date.now()/1000) - (250 * 24 * 60 * 60)}&to=${Math.floor(Date.now()/1000)}&token=${finnhubApiKey}`;

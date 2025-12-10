@@ -1,14 +1,16 @@
-# StockWise App - 產品需求文件 (PRD)
+# Kairis - 產品需求文件 (PRD)
 
 ## 1. 產品概述 (Product Overview)
 
-本文件旨在定義一款名為 StockWise 的行動優先網頁應用程式 (SPA)。此 App 的核心目標是為投資者提供一個簡潔、高效的介面，用以追蹤自選的美股與台股、透過多維度技術指標自動掃描交易機會，並結合 AI 智慧解讀，輔助使用者做出更全面的投資決策。
+本文件旨在定義一款名為 Kairis 的行動優先網頁應用程式 (PWA)。此 App 的核心目標是為投資者提供一個簡潔、高效的介面，用以追蹤自選的美股、透過多維度技術指標自動掃描交易機會，並結合 AI 智慧解讀，輔助使用者做出更全面的投資決策。
 
-**Live Demo**: https://stock-wise-three.vercel.app/
+**Live Demo**: https://kairis.vercel.app/
+
+**GitHub Repository**: https://github.com/user/kairis
 
 ## 2. 目標用戶 (Target Audience)
 
-- **主要用戶**: 對美股、台股有基本認識，希望透過技術分析與 AI 輔助，提升選股與決策效率的散戶投資者。
+- **主要用戶**: 對美股有基本認識，希望透過技術分析與 AI 輔助，提升選股與決策效率的散戶投資者。
 
 - **用戶特徵**:
   - 習慣使用手機進行看盤與分析。
@@ -30,10 +32,12 @@
 #### 3.2.1 市場分頁:
 
 - 提供「美股」和「台股」兩個子分頁，使用者可以輕鬆切換，專注於特定市場的股票列表。預設顯示「美股」。
+- **注意**: 目前台股功能受 API 限制，建議專注使用美股功能。
 
 #### 3.2.2 新增/刪除股票:
 
 - **新增**: 提供「+」按鈕，彈出視窗讓使用者輸入股票代號。系統會根據當前分頁（美股/台股）自動補上 .US 或 .TW 後綴。
+- **股票驗證**: 系統會驗證股票代號的有效性，無效或不支援的股票會顯示錯誤訊息。
 - **刪除**: 每張股票卡片右上角提供「x」按鈕。點擊後會彈出確認提示框，防止誤刪。
 
 #### 3.2.3 股票卡片顯示項目:
@@ -77,22 +81,24 @@
     - 技術指標參考: 以卡片形式呈現 RSI、MACD、布林通道、量價關係等核心指標的當前數值。
     - Gemini AI 智慧解讀: 提供按鈕讓使用者即時生成由 AI 提供的技術面綜合分析，並修正了手機上的跑版問題。
   - **圖表分頁**:
-    - K 線圖: 提供專業的 30 日 K 線圖，顯示完整的 OHLC 數據。
-    - 週期切換: 提供「日線」與「週線」切換按鈕，讓使用者能從不同時間維度進行分析。
+    - K 線圖: 提供專業的 30 日 K 線圖，顯示完整的 OHLC 數據，使用 Chart.js 金融圖表插件。
+    - 週期切換: 提供「5分線」、「日線」與「週線」切換按鈕，讓使用者能從不同時間維度進行分析。
+    - MACD 指標: 額外提供 MACD 技術指標圖表，包含 DIF、DEA 和柱狀圖。
   - **新聞分頁**:
     - 即時新聞: 自動抓取與該股票相關的最新市場新聞。
     - AI 翻譯: 當新聞標題為英文時，會自動呼叫 AI 翻譯成中文，並截斷過長的標題。
 
 ## 4. 技術規格與部署
 
-- **前端**: 純 HTML, CSS (Tailwind), Vanilla JavaScript。
-- **後端**: [Vercel](https://www.google.com/search?q=https://vercel.com/cleos-projects-5c380de1/stock-wise) 無伺服器函式 (Serverless Functions)。
-- **資料庫**: Google [Firebase](https://www.google.com/search?q=https://console.firebase.google.com/u/0/project/stockwise-ad5e9/overview) (Firestore) 用於儲存使用者自選股，並支援匿名登入。
+- **前端**: 純 HTML, CSS (Tailwind), Vanilla JavaScript, Chart.js 金融圖表插件。
+- **後端**: [Vercel](https://vercel.com/) 無伺服器函式 (Serverless Functions)。
+- **資料庫**: Google [Firebase](https://firebase.google.com/) (Firestore) 用於儲存使用者自選股，並支援匿名登入與 Google 登入。
+- **快取系統**: [Vercel KV](https://vercel.com/docs/storage/vercel-kv) (基於 Redis) 用於提升 API 性能。
 - **API 組合**:
-  - [Finnhub](https://finnhub.io/): 用於獲取美股即時報價與公司新聞。
-  - [Financial Modeling Prep](https://site.financialmodelingprep.com/developer/docs/dashboard): 用於獲取穩定的每日歷史 K 線數據。
-  - [Gemini API](https://aistudio.google.com/apikey): 用於 AI 智慧解讀與新聞標題翻譯。
-- **部署**: 程式碼託管於 [GitHub](https://www.google.com/search?q=https://github.com/cleoliu/StockWise)，並透過 Vercel 進行自動化部署。
+  - [Finnhub](https://finnhub.io/): 用於獲取美股即時報價與公司新聞（免費版限制：無歷史 K 線數據）。
+  - [Alpha Vantage](https://www.alphavantage.co/): 主要用於獲取美股歷史 K 線數據（免費版限制：每分鐘 5 次，每天 25 次）。
+  - [Google Gemini API](https://ai.google.dev/): 用於 AI 智慧解讀與新聞標題翻譯。
+- **部署**: 程式碼託管於 GitHub，並透過 Vercel 進行自動化部署。
 
 ## 5. 部署指南
 
@@ -104,7 +110,7 @@
 - [Vercel](https://vercel.com/)
 - [Google Firebase](https://firebase.google.com/)
 - [Finnhub](https://finnhub.io/)
-- [Financial Modeling Prep](https://site.financialmodelingprep.com/)
+- [Alpha Vantage](https://www.alphavantage.co/)
 - [Google AI Studio (for Gemini API)](https://aistudio.google.com/)
 
 #### 2. 專案設定
@@ -120,16 +126,63 @@
 3.  **部署到 Vercel**:
     - 在 Vercel 上從您的 GitHub 儲存庫匯入專案。
     - 在專案設定的「Environment Variables」中，新增以下三個金鑰：
-      - `FINNHUB_API_KEY`
-      - `FMP_API_KEY`
-      - `GEMINI_API_KEY`
+      - `FINNHUB_API_KEY`: 從 Finnhub 獲取的 API 金鑰
+      - `ALPHA_VANTAGE_API_KEY`: 從 Alpha Vantage 獲取的 API 金鑰  
+      - `GEMINI_API_KEY`: 從 Google AI Studio 獲取的 API 金鑰
     - 設定 Vercel KV 快取:
       - 「Storage」分頁，選擇「Upstash」>「Upstash for Redis」，點擊「Create」按鈕
       - 選擇「free」方案、選擇鄰近地區
       - 點選「連結專案」，會自動在專案中，加入所有連接 KV 資料庫所需要的環境變數 (例如 KV_URL, KV_REST_API_URL, KV_REST_API_TOKEN 等)。
     - 點擊「Deploy」。
 
-## 6. 未來發展 (Future Roadmap)
+## 6. API 限制與已知問題
 
-- **支援台股 API**: 尋找並整合可靠的台股 API 來源。
-- **自訂掃描條件**: 讓使用者可以自訂「機會掃描」的篩選策略。
+### 6.1 免費 API 限制
+
+#### Finnhub API (免費版)
+- ✅ **支援功能**: 美股即時報價、公司資訊、新聞
+- ❌ **限制**: 無法存取歷史 K 線數據 (`"You don't have access to this resource"`)
+- ❌ **不支援**: 台股、港股等非美國市場
+- ⚠️ **注意**: 5 分線功能可能無法使用
+
+#### Alpha Vantage API (免費版)  
+- ✅ **支援功能**: 美股歷史日線數據
+- ⚠️ **限制**: 每分鐘 5 次請求，每天 25 次請求
+- ❌ **不支援**: 台股、OTC 股票、特殊格式股票代號
+- 📊 **數據範圍**: 主要支援在 NYSE、NASDAQ 交易的股票
+
+#### Google Gemini API
+- ✅ **支援功能**: AI 分析、文字翻譯
+- ⚠️ **注意**: 使用 `gemini-2.5-flash` 模型
+
+### 6.2 股票支援範圍
+
+#### ✅ 完全支援的股票
+- 主要美股 (如 AAPL, GOOGL, MSFT, TSLA, BABA 等)
+- 在 NYSE、NASDAQ 交易的股票
+
+#### ⚠️ 部分支援的股票  
+- 某些美股可能只有即時報價，無歷史資料
+- 新上市或交易量極低的股票
+
+#### ❌ 不支援的股票
+- 台股 (2330.TW 等) - API 限制
+- OTC 市場股票  
+- Penny stocks
+- 非美國交易所股票
+
+### 6.3 錯誤處理機制
+
+應用程式已實作以下錯誤處理：
+- **股票不存在**: 顯示「股票代號不存在或不支援」
+- **無歷史資料**: 使用當前報價建立基本歷史數據點
+- **API 限制**: 顯示具體錯誤原因和建議
+- **快取失敗**: 自動跳過快取，直接從 API 獲取數據
+
+## 7. 未來發展 (Future Roadmap)
+
+- **升級 API 方案**: 考慮付費 API 以解除限制並支援更多市場
+- **支援台股 API**: 尋找並整合可靠的台股 API 來源
+- **自訂掃描條件**: 讓使用者可以自訂「機會掃描」的篩選策略
+- **資料快取優化**: 改善快取策略以減少 API 呼叫次數
+- **多語言支援**: 擴展至英文等其他語言介面
