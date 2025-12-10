@@ -28,6 +28,15 @@ async function handleGetStockData(request, response) {
       return response.status(400).json({ error: '必須提供股票代號' });
     }
 
+    // Log environment for debugging
+    console.log('Environment check:', {
+      FINNHUB_API_KEY: !!process.env.FINNHUB_API_KEY,
+      ALPHA_VANTAGE_API_KEY: !!process.env.ALPHA_VANTAGE_API_KEY,
+      KV_URL: !!process.env.KV_URL,
+      KV_REST_API_URL: !!process.env.KV_REST_API_URL,
+      KV_REST_API_TOKEN: !!process.env.KV_REST_API_TOKEN
+    });
+
     const finnhubApiKey = process.env.FINNHUB_API_KEY;
     const alphaVantageApiKey = process.env.ALPHA_VANTAGE_API_KEY;
 
@@ -38,8 +47,17 @@ async function handleGetStockData(request, response) {
     const quoteCacheKey = `quote_finnhub_${symbol}`;
     const historyCacheKey = timeframe === '5M' ? `intraday_fmp_${symbol}` : `history_fmp_${symbol}`;
 
-    let quoteData = await kv.get(quoteCacheKey);
-    let historyData = await kv.get(historyCacheKey);
+    let quoteData, historyData;
+    try {
+      quoteData = await kv.get(quoteCacheKey);
+      historyData = await kv.get(historyCacheKey);
+      console.log('Cache lookup successful for', symbol);
+    } catch (kvError) {
+      console.error('KV Cache error:', kvError);
+      // Continue without cache if KV fails
+      quoteData = null;
+      historyData = null;
+    }
 
     // 從 Finnhub 獲取即時報價 (若快取中沒有)
     if (!quoteData) {
@@ -65,7 +83,13 @@ async function handleGetStockData(request, response) {
           high: quoteJson.h,
           low: quoteJson.l,
       };
-      await kv.set(quoteCacheKey, quoteData, { ex: 60 }); // 快取 1 分鐘
+      try {
+        await kv.set(quoteCacheKey, quoteData, { ex: 60 }); // 快取 1 分鐘
+        console.log('Quote data cached for', symbol);
+      } catch (kvError) {
+        console.error('KV Cache write error (quote):', kvError);
+        // Continue without caching if KV fails
+      }
     }
 
     // 從多個數據源獲取歷史資料 (若快取中沒有)
@@ -177,7 +201,13 @@ async function handleGetStockData(request, response) {
       }
 
       
-      await kv.set(historyCacheKey, historyData, { ex: cacheTime });
+      try {
+        await kv.set(historyCacheKey, historyData, { ex: cacheTime });
+        console.log('History data cached for', symbol);
+      } catch (kvError) {
+        console.error('KV Cache write error (history):', kvError);
+        // Continue without caching if KV fails
+      }
     }
 
     const processedData = {
@@ -191,7 +221,14 @@ async function handleGetStockData(request, response) {
 
   } catch (error) {
     console.error('handleGetStockData Error:', error);
-    return response.status(500).json({ error: '伺服器內部發生錯誤' });
+    console.error('Error stack:', error.stack);
+    console.error('Symbol:', symbol);
+    console.error('Timeframe:', timeframe);
+    return response.status(500).json({ 
+      error: '伺服器內部發生錯誤', 
+      details: error.message,
+      symbol: symbol 
+    });
   }
 }
 
@@ -238,7 +275,11 @@ async function handleGetNews(request, response) {
 
     } catch (error) {
         console.error('handleGetNews Error:', error);
-        return response.status(500).json({ error: '獲取新聞時發生錯誤' });
+        console.error('News error stack:', error.stack);
+        return response.status(500).json({ 
+          error: '獲取新聞時發生錯誤',
+          details: error.message 
+        });
     }
 }
 
@@ -302,6 +343,10 @@ async function handleGeminiAnalysis(request, response) {
     }
   } catch (error) {
     console.error('handleGeminiAnalysis Error:', error);
-    return response.status(500).json({ error: 'Gemini 分析時發生錯誤' });
+    console.error('Gemini error stack:', error.stack);
+    return response.status(500).json({ 
+      error: 'Gemini 分析時發生錯誤',
+      details: error.message 
+    });
   }
 }
