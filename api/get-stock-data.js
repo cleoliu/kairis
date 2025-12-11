@@ -584,62 +584,90 @@ async function handleGetStockData(request, response) {
       }
     }
 
-    // 從 Finnhub 獲取即時報價 (若快取中沒有)
+    // 獲取即時報價 (若快取中沒有) - 優先使用 Finnhub，失敗時使用 yfinance
     if (!quoteData) {
       const finnhubSymbol = symbol.replace(/\.US$/, '');
-      const profileUrl = `https://finnhub.io/api/v1/stock/profile2?symbol=${finnhubSymbol}&token=${finnhubApiKey}`;
-      const finnhubQuoteUrl = `https://finnhub.io/api/v1/quote?symbol=${finnhubSymbol}&token=${finnhubApiKey}`;
       
-      const [profileResponse, finnhubQuoteResponse] = await Promise.all([fetch(profileUrl), fetch(finnhubQuoteUrl)]);
-      if (!profileResponse.ok || !finnhubQuoteResponse.ok) {
-        console.error(`Finnhub API request failed for ${symbol}:`, {
-          symbol: symbol,
-          finnhubSymbol: finnhubSymbol,
-          profileStatus: profileResponse.status,
-          quoteStatus: finnhubQuoteResponse.status,
-          profileUrl: profileUrl,
-          quoteUrl: finnhubQuoteUrl,
-          apiKeyExists: !!finnhubApiKey,
-          apiKeyLength: finnhubApiKey?.length
-        });
-        
-        // 嘗試獲取錯誤響應內容
-        try {
-          const profileError = !profileResponse.ok ? await profileResponse.text() : null;
-          const quoteError = !finnhubQuoteResponse.ok ? await finnhubQuoteResponse.text() : null;
-          console.error('Finnhub error responses:', { profileError, quoteError });
-        } catch (e) {
-          console.error('Failed to read error responses:', e);
-        }
-        
-        return response.status(404).json({ 
-          error: `找不到 Finnhub 即時報價資料: ${symbol}`,
-          details: `Profile API: ${profileResponse.status}, Quote API: ${finnhubQuoteResponse.status}`,
-          symbol: symbol,
-          finnhubSymbol: finnhubSymbol
-        });
-      }
-      const profileJson = await profileResponse.json();
-      const quoteJson = await finnhubQuoteResponse.json();
-
-      if (quoteJson.c === 0 && !profileJson.name) {
-        console.warn(`No valid data from Finnhub for ${symbol}: quote=${quoteJson.c}, name=${profileJson.name}`);
-        return response.status(404).json({ error: `找不到 ${symbol} 的資料，可能此股票代號不存在或不支援` });
-      }
-      quoteData = {
-          name: profileJson.name || symbol,
-          price: quoteJson.c,
-          change: quoteJson.d,
-          changePercent: quoteJson.dp,
-          high: quoteJson.h,
-          low: quoteJson.l,
-      };
+      // 首先嘗試 Finnhub
       try {
-        await kv.set(quoteCacheKey, quoteData, { ex: 60 }); // 快取 1 分鐘
-        console.log('Quote data cached for', symbol);
-      } catch (kvError) {
-        console.error('KV Cache write error (quote):', kvError);
-        // Continue without caching if KV fails
+        const profileUrl = `https://finnhub.io/api/v1/stock/profile2?symbol=${finnhubSymbol}&token=${finnhubApiKey}`;
+        const finnhubQuoteUrl = `https://finnhub.io/api/v1/quote?symbol=${finnhubSymbol}&token=${finnhubApiKey}`;
+        
+        const [profileResponse, finnhubQuoteResponse] = await Promise.all([fetch(profileUrl), fetch(finnhubQuoteUrl)]);
+        
+        if (profileResponse.ok && finnhubQuoteResponse.ok) {
+          const profileJson = await profileResponse.json();
+          const quoteJson = await finnhubQuoteResponse.json();
+
+          if (quoteJson.c && quoteJson.c !== 0) {
+            console.log(`Successfully used Finnhub for quote data: ${symbol}`);
+            quoteData = {
+                name: profileJson.name || symbol,
+                price: quoteJson.c,
+                change: quoteJson.d,
+                changePercent: quoteJson.dp,
+                high: quoteJson.h,
+                low: quoteJson.l,
+            };
+          } else {
+            console.warn(`Finnhub returned invalid quote data for ${symbol}, trying yfinance fallback`);
+            throw new Error('Invalid Finnhub data');
+          }
+        } else {
+          console.warn(`Finnhub API error for ${symbol} (${profileResponse.status}/${finnhubQuoteResponse.status}), trying yfinance fallback`);
+          throw new Error('Finnhub API error');
+        }
+      } catch (finnhubError) {
+        console.log(`Finnhub failed for ${symbol}, trying yfinance as fallback:`, finnhubError.message);
+        
+        // 使用 yfinance 作為備用方案獲取即時報價
+        try {
+          const yfinanceQuoteUrl = `/api/yfinance-history?symbol=${finnhubSymbol}&timeframe=1D&limit=1`;
+          const yfinanceResponse = await fetch(yfinanceQuoteUrl);
+          
+          if (yfinanceResponse.ok) {
+            const yfinanceData = await yfinanceResponse.json();
+            
+            if (yfinanceData.history && yfinanceData.history.length > 0) {
+              const latestData = yfinanceData.history[yfinanceData.history.length - 1];
+              const previousData = yfinanceData.history[yfinanceData.history.length - 2] || latestData;
+              
+              const change = latestData.close - previousData.close;
+              const changePercent = previousData.close !== 0 ? (change / previousData.close) * 100 : 0;
+              
+              console.log(`Successfully used yfinance for quote data: ${symbol}`);
+              quoteData = {
+                name: yfinanceData.name || symbol,
+                price: latestData.close,
+                change: change,
+                changePercent: changePercent,
+                high: latestData.high,
+                low: latestData.low,
+              };
+            } else {
+              throw new Error('yfinance returned empty data');
+            }
+          } else {
+            throw new Error(`yfinance API error: ${yfinanceResponse.status}`);
+          }
+        } catch (yfinanceError) {
+          console.error(`Both Finnhub and yfinance failed for ${symbol}:`, yfinanceError.message);
+          return response.status(404).json({ 
+            error: `無法獲取 ${symbol} 的即時報價資料`,
+            details: `Finnhub: ${finnhubError.message}, yfinance: ${yfinanceError.message}`
+          });
+        }
+      }
+      
+      // 快取即時報價資料
+      if (quoteData) {
+        try {
+          await kv.set(quoteCacheKey, quoteData, { ex: 60 }); // 快取 1 分鐘
+          console.log('Quote data cached for', symbol);
+        } catch (kvError) {
+          console.error('KV Cache write error (quote):', kvError);
+          // Continue without caching if KV fails
+        }
       }
     }
 
