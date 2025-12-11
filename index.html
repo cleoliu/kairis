@@ -540,7 +540,19 @@ const App = {
         try {
             const url = timeframe ? `/api/get-stock-data?symbol=${symbol}&timeframe=${timeframe}` : `/api/get-stock-data?symbol=${symbol}`;
             console.log(`[${new Date().toISOString()}] Fetching data from API for ${symbol}${timeframe ? ` (${timeframe})` : ''}`);
-            const response = await fetch(url);
+            
+            // 🚀 加入 fetch 超時機制
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超時
+            
+            const response = await fetch(url, {
+                signal: controller.signal,
+                headers: {
+                    'Cache-Control': 'no-cache'
+                }
+            });
+            clearTimeout(timeoutId);
+            
             const data = await response.json();
 
             if (!response.ok) {
@@ -557,7 +569,23 @@ const App = {
             return processedData;
 
         } catch (error) {
-            const errorData = { error: '網路請求失敗' };
+            console.error(`❌ ${symbol} 請求失敗:`, error);
+            let errorMessage = '網路請求失敗';
+            
+            // 🚀 更詳細的錯誤處理
+            if (error.name === 'AbortError') {
+                errorMessage = '請求超時';
+            } else if (error.message.includes('Failed to fetch')) {
+                errorMessage = '網路連線失敗';
+            } else if (error.message.includes('timeout')) {
+                errorMessage = '請求超時';
+            }
+            
+            const errorData = { 
+                error: errorMessage,
+                symbol: symbol,
+                timestamp: Date.now()
+            };
             this.state.stockDataCache[cacheKey] = errorData;
             return errorData;
         }
@@ -574,12 +602,43 @@ const App = {
             .filter(symbol => !symbol.includes('.TW'))
             .filter(symbol => !this.state.stockDataCache[symbol] || forceRefresh);
         
-        const promises = symbolsToFetch.map(symbol => this.fetchStockData(symbol, forceRefresh));
-
-        await Promise.all(promises);
+        console.log(`🚀 開始載入 ${symbolsToFetch.length} 個股票...`);
+        
+        // 🚀 優化：批次載入 + 超時機制 + 即時更新
+        const BATCH_SIZE = 3; // 每批3個
+        const TIMEOUT_PER_STOCK = 8000; // 每股8秒超時
+        let completed = 0;
+        
+        // 分批處理
+        for (let i = 0; i < symbolsToFetch.length; i += BATCH_SIZE) {
+            const batch = symbolsToFetch.slice(i, i + BATCH_SIZE);
+            console.log(`📦 處理批次 ${Math.floor(i/BATCH_SIZE) + 1}: ${batch.join(', ')}`);
+            
+            // 為每個 API 加上超時機制
+            const batchPromises = batch.map(symbol => 
+                Promise.race([
+                    this.fetchStockData(symbol, forceRefresh),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('timeout')), TIMEOUT_PER_STOCK)
+                    )
+                ]).catch(error => {
+                    console.warn(`⚠️ ${symbol} 載入失敗:`, error.message);
+                    return { symbol, error: '載入超時' };
+                })
+            );
+            
+            // 等待批次完成
+            await Promise.allSettled(batchPromises);
+            completed += batch.length;
+            
+            // 即時更新 UI
+            console.log(`✅ 已完成 ${completed}/${symbolsToFetch.length} 個股票`);
+            this.render();
+        }
 
         this.state.isLoading = false;
         this.render();
+        console.log(`🎉 自選列表載入完成！`);
     },
 
     setupEventListeners() {
@@ -1825,19 +1884,30 @@ const App = {
             }
         }
         
-        // 計算 Signal 線（MACD 的9日EMA）
+        // 🔧 修正 DEA (Signal) 線計算 - MACD 線的9日EMA
         const signalLine = new Array(orderedCloses.length).fill(0);
+        
         if (validMacdValues.length >= 9) {
-            const signalEMA = calculateEMA(validMacdValues, 9);
-            let signalIndex = 0;
+            console.log('計算 DEA，有效 MACD 值數量:', validMacdValues.length);
+            
+            // 直接對 MACD 線計算 EMA，而不是對 validMacdValues
+            const macdEMA = calculateEMA(validMacdValues, 9);
+            
+            // 將 EMA 結果映射回原始位置
+            let validIndex = 0;
             for (let i = 25; i < orderedCloses.length; i++) {
                 if (macdLine[i] !== 0) {
-                    if (signalIndex >= 8 && signalEMA[signalIndex] !== undefined) {
-                        signalLine[i] = signalEMA[signalIndex];
+                    // 從第9個有效 MACD 值開始有 Signal 值
+                    if (validIndex >= 8 && macdEMA[validIndex] !== undefined) {
+                        signalLine[i] = macdEMA[validIndex];
                     }
-                    signalIndex++;
+                    validIndex++;
                 }
             }
+            
+            console.log('DEA 計算完成，非零值數量:', signalLine.filter(v => v !== 0).length);
+        } else {
+            console.warn('MACD 值不足9個，無法計算 DEA:', validMacdValues.length);
         }
         
         // 計算 Histogram
