@@ -23,9 +23,9 @@
     -->
     <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1/dist/chartjs-chart-financial.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://unpkg.com/chartjs-chart-financial@0.1.3/dist/chartjs-chart-financial.min.js"></script>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
@@ -1316,29 +1316,29 @@ const App = {
         try {
             console.log('Creating K-line chart...');
             this.state.advancedChartInstance = new Chart(ctx, {
-            type: 'candlestick',
-            data: {
-                datasets: [{
-                    label: `${symbol} K-Line`,
-                    data: data,
-                    borderColor: '#94a3b8',
-                    color: {
-                        up: '#22c55e',
-                        down: '#ef4444',
-                        unchanged: '#94a3b8'
-                    },
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                maintainAspectRatio: false,
-                responsive: true,
-                interaction: {
-                    intersect: false,
-                    mode: 'index'
+                type: 'candlestick',
+                data: {
+                    datasets: [{
+                        label: `${symbol} K-Line`,
+                        data: data,
+                        borderColor: '#94a3b8',
+                        color: {
+                            up: '#22c55e',
+                            down: '#ef4444',
+                            unchanged: '#94a3b8'
+                        },
+                        borderWidth: 1
+                    }]
                 },
-                scales: {
-                    x: {
+                options: {
+                    maintainAspectRatio: false,
+                    responsive: true,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    scales: {
+                        x: {
                         type: 'time',
                         time: { 
                             unit: timeUnit,
