@@ -58,8 +58,7 @@ class handler(BaseHTTPRequestHandler):
                 period=period,
                 interval=interval,
                 auto_adjust=True,
-                prepost=True,
-                threads=True
+                prepost=True
             )
             
             if hist_data.empty:
