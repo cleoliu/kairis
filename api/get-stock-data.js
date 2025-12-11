@@ -29,10 +29,10 @@ async function getYfinanceData(cleanSymbol, timeframe) {
       const fiveDaysAgo = now - (5 * 24 * 60 * 60);
       apiUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?period1=${fiveDaysAgo}&period2=${now}&interval=5m&includePrePost=true&includeAdjustedClose=true`;
     } else {
-      // 日線：最近1.5個月 (45天) - 平衡速度與MACD準確性  
+      // 日線：最近3個月 (90天) - 確保有足夠數據計算完整的MACD  
       const now = Math.floor(Date.now() / 1000);
-      const oneAndHalfMonthsAgo = now - (45 * 24 * 60 * 60); // 45天約30個交易日，足夠MACD
-      apiUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?period1=${oneAndHalfMonthsAgo}&period2=${now}&interval=1d&includePrePost=true&includeAdjustedClose=true`;
+      const threeMonthsAgo = now - (90 * 24 * 60 * 60); // 90天確保有充足的MACD計算數據
+      apiUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?period1=${threeMonthsAgo}&period2=${now}&interval=1d&includePrePost=true&includeAdjustedClose=true`;
     }
     
     console.log(`[${new Date().toISOString()}] Fetching from Yahoo Finance: ${apiUrl}`);

@@ -1652,12 +1652,13 @@ const App = {
                 }
             }
             
-            console.log('Found valid MACD indices:', {
+            console.log('🔧 MACD FIX V2.0 - Found valid MACD indices:', {
                 totalIndices: validMacdIndices.length,
                 firstValidIndex: validMacdIndices[0],
                 lastValidIndex: validMacdIndices[validMacdIndices.length - 1],
                 firstValidDate: macdData[validMacdIndices[0]]?.date,
-                lastValidDate: macdData[validMacdIndices[validMacdIndices.length - 1]]?.date
+                lastValidDate: macdData[validMacdIndices[validMacdIndices.length - 1]]?.date,
+                deployTime: new Date().toISOString()
             });
             
             // 取最後30個有效的MACD值
