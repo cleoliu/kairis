@@ -92,8 +92,13 @@ async function getYfinanceData(cleanSymbol, timeframe) {
       
       const date = new Date(timestamp * 1000);
       
+      // 🔧 修正日期格式 - 使用 UTC 避免時區問題
+      const dateString = timeframe === '5M' 
+        ? date.toISOString() 
+        : `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+      
       history.push({
-        date: timeframe === '5M' ? date.toISOString() : date.toISOString().split('T')[0],
+        date: dateString,
         open: open || close,
         high: high || close,
         low: low || close,

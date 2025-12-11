@@ -1541,7 +1541,11 @@ const App = {
             signalLine: macdCalculation.signalLine.slice(-displayLength)
         };
         
-        const labels = macdData.slice(-displayLength).map(d => new Date(d.date).getTime());
+        // 🔧 修正 MACD 日期標籤 - 使用 UTC 時區避免日期偏移
+        const labels = macdData.slice(-displayLength).map(d => {
+            const date = d.date.includes('T') ? d.date : d.date + 'T00:00:00Z'; // 確保有時區資訊
+            return new Date(date).getTime();
+        });
         
         // 確保數據有效
         const nonZeroCount = displayData.histogram.filter(val => val !== 0).length;
