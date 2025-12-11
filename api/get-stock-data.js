@@ -81,7 +81,7 @@ async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey) {
     
     // 取得 Twelve Data API keys（主要和備用）
     const primaryTwelveDataKey = process.env.TWELVE_DATA_API_KEY;
-    const backupTwelveDataKey = process.env.TWELVE_DATA_API_KEY_BACKUP;
+    const backupTwelveDataKey = process.env.TWELVE_DATA_API_KEY_BACKUP || '47fcfd493dbe4a7f89af1109ba980064';
     const twelveDataKeys = [primaryTwelveDataKey, backupTwelveDataKey].filter(key => key);
     
     console.log(`Available Twelve Data keys: ${twelveDataKeys.length} (primary: ${!!primaryTwelveDataKey}, backup: ${!!backupTwelveDataKey})`);
@@ -201,7 +201,7 @@ async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey) {
 }
 
 // 處理 API 狀態查詢
-async function handleApiStatus(request, response) {
+async function handleApiStatus(_, response) {
   try {
     const statusReport = {
       timestamp: new Date().toISOString(),
@@ -228,8 +228,9 @@ async function handleApiStatus(request, response) {
 
 // 處理從 Finnhub (即時) 和 FMP (歷史) 獲取股價資料的邏輯
 async function handleGetStockData(request, response) {
+  let symbol, timeframe; // 在 try 外部宣告變數
   try {
-    const { symbol, timeframe } = request.query;
+    ({ symbol, timeframe } = request.query);
     if (!symbol) {
       return response.status(400).json({ error: '必須提供股票代號' });
     }
@@ -274,6 +275,8 @@ async function handleGetStockData(request, response) {
     
     // 如果是週末，使用上一個交易日的數據
     let tradingDay = today;
+    let historyData = null; // 初始化歷史數據變數
+    
     if (isWeekend) {
       const lastTradingDate = new Date(todayDate);
       if (dayOfWeek === 0) { // 週日，回到週五
@@ -300,11 +303,6 @@ async function handleGetStockData(request, response) {
     }
 
     let quoteData;
-    
-    // 如果週末還沒取到歷史數據，初始化為 null
-    if (!historyData) {
-      historyData = null;
-    }
     
     try {
       quoteData = await kv.get(quoteCacheKey);
@@ -420,6 +418,17 @@ async function handleGetStockData(request, response) {
       }
     }
 
+    // 確保所有必要的數據都存在
+    if (!quoteData || !historyData) {
+      console.error(`Missing data for ${symbol}: quoteData=${!!quoteData}, historyData=${!!historyData}`);
+      return response.status(404).json({ 
+        error: `無法獲取 ${symbol} 的完整資料`, 
+        symbol: symbol,
+        missingQuote: !quoteData,
+        missingHistory: !historyData
+      });
+    }
+
     const processedData = {
       symbol: symbol,
       ...quoteData,
@@ -432,12 +441,12 @@ async function handleGetStockData(request, response) {
   } catch (error) {
     console.error('handleGetStockData Error:', error);
     console.error('Error stack:', error.stack);
-    console.error('Symbol:', symbol);
-    console.error('Timeframe:', timeframe);
+    console.error('Symbol:', symbol || 'undefined');
+    console.error('Timeframe:', timeframe || 'undefined');
     return response.status(500).json({ 
       error: '伺服器內部發生錯誤', 
       details: error.message,
-      symbol: symbol 
+      symbol: symbol || 'unknown'
     });
   }
 }
