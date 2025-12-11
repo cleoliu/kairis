@@ -1392,10 +1392,14 @@ const App = {
         } else {
             // 🔧 修正：取最後30天資料 (最新的資料)
             chartData = history.slice(-30); // 取最後30天，不需要reverse
-            // 🔧 MACD 計算使用最多100天的數據以確保準確性
+            
+            // 🔧 MACD 計算：為了確保顯示範圍一致，MACD 也使用相同的30天數據範圍
+            // 但為了計算準確性，我們需要更多歷史數據來計算EMA，然後只顯示最後30天
             const macdDataLength = Math.min(100, history.length);
             if (macdDataLength >= 26) {
-                macdData = history.slice(-macdDataLength); // 取最後100天，已是正確順序
+                // 使用100天數據計算，但確保 MACD 結果與 chartData 的日期範圍匹配
+                macdData = history.slice(-macdDataLength); // 取最後100天用於計算
+                console.log('MACD calculation will use', macdDataLength, 'days but display last 30 days to match K-line chart');
             } else {
                 console.warn(`Not enough daily data for MACD (${macdDataLength}/26), disabling MACD chart`);
                 macdData = null;
@@ -1574,6 +1578,15 @@ const App = {
             
             // 繪製 MACD 圖表，使用更多的歷史數據進行計算
             if (macdData && macdData.length >= 26) {
+                console.log('Rendering MACD chart with data range:', {
+                    macdDataLength: macdData.length,
+                    chartDataLength: chartData.length,
+                    macdFirstDate: macdData[0]?.date,
+                    macdLastDate: macdData[macdData.length - 1]?.date,
+                    chartFirstDate: chartData[0]?.date,
+                    chartLastDate: chartData[chartData.length - 1]?.date,
+                    timeUnit
+                });
                 this.renderMACDChart(symbol, macdData, timeUnit);
             } else {
                 console.warn('Skipping MACD chart due to insufficient data');
@@ -1610,19 +1623,47 @@ const App = {
         console.log('非零柱狀圖值:', macdCalculation.histogram.filter(v => v !== 0).length);
         console.log('最後10個柱狀圖值:', macdCalculation.histogram.slice(-10));
         
-        // 只顯示最近 30 天的 MACD 數據（與 K 線圖對應）
-        const displayLength = timeUnit === 'week' ? macdData.length : Math.min(30, macdData.length);
-        const displayData = {
-            histogram: macdCalculation.histogram.slice(-displayLength),
-            macdLine: macdCalculation.macdLine.slice(-displayLength),
-            signalLine: macdCalculation.signalLine.slice(-displayLength)
-        };
+        // 🔧 修正：確保 MACD 顯示範圍與 K 線圖完全一致
+        let displayLength, displayData, labels;
         
-        // 🔧 修正 MACD 日期標籤 - 使用 UTC 時區避免日期偏移
-        const labels = macdData.slice(-displayLength).map(d => {
-            const date = d.date.includes('T') ? d.date : d.date + 'T00:00:00Z'; // 確保有時區資訊
-            return new Date(date).getTime();
-        });
+        if (timeUnit === 'week') {
+            // 週線顯示全部數據
+            displayLength = macdData.length;
+            displayData = {
+                histogram: macdCalculation.histogram,
+                macdLine: macdCalculation.macdLine,
+                signalLine: macdCalculation.signalLine
+            };
+            labels = macdData.map(d => {
+                const date = d.date.includes('T') ? d.date : d.date + 'T00:00:00Z';
+                return new Date(date).getTime();
+            });
+        } else {
+            // 日線：只顯示最後 30 天，確保與 K 線圖日期範圍完全一致
+            displayLength = 30;
+            
+            // 取 MACD 計算結果的最後 30 個數據點
+            displayData = {
+                histogram: macdCalculation.histogram.slice(-displayLength),
+                macdLine: macdCalculation.macdLine.slice(-displayLength),
+                signalLine: macdCalculation.signalLine.slice(-displayLength)
+            };
+            
+            // 🔧 修正：使用原始歷史數據的最後 30 天來生成標籤，確保日期一致
+            // 注意：macdData 是用於計算的100天數據，我們需要取最後30天的日期
+            const last30DaysData = macdData.slice(-displayLength);
+            labels = last30DaysData.map(d => {
+                const date = d.date.includes('T') ? d.date : d.date + 'T00:00:00Z';
+                return new Date(date).getTime();
+            });
+            
+            console.log('MACD display range:', {
+                displayLength,
+                firstDate: last30DaysData[0]?.date,
+                lastDate: last30DaysData[last30DaysData.length - 1]?.date,
+                totalMacdData: macdData.length
+            });
+        }
         
         // 確保數據有效
         const nonZeroCount = displayData.histogram.filter(val => val !== 0).length;
@@ -1956,7 +1997,11 @@ const App = {
             nonZeroHistogram: histogram.filter(val => val !== 0).length,
             sampleHistogram: histogram.slice(-10),
             sampleMacd: macdLine.slice(-10),
-            sampleSignal: signalLine.slice(-10)
+            sampleSignal: signalLine.slice(-10),
+            dateRange: {
+                first: orderedData[0]?.date,
+                last: orderedData[orderedData.length - 1]?.date
+            }
         });
         
         // 如果原始數據是新到舊的順序，需要將結果也反轉回去
