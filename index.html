@@ -1343,7 +1343,14 @@ const App = {
         // 根據時間框架獲取相應的數據
         let stockData;
         if (this.state.chartTimeframe === '5M') {
+            console.log(`🕐 開始獲取 ${symbol} 的5分線數據...`);
             stockData = await this.fetchStockData(symbol, true, '5M');
+            console.log(`🕐 5分線數據獲取結果:`, {
+                success: !stockData?.error,
+                error: stockData?.error,
+                dataLength: stockData?.history?.length || 0,
+                sampleData: stockData?.history?.slice(0, 2)
+            });
         } else {
             stockData = this.state.stockDataCache[symbol];
         }
@@ -1378,17 +1385,27 @@ const App = {
             console.log('Weekly chart data:', chartData.length, 'MACD data:', macdData.length);
         } else if (this.state.chartTimeframe === '5M') {
             // 5分線圖顯示當天所有數據
-            chartData = history.reverse(); // 5分線數據已經是正確順序
+            // 🔧 修正：不要修改原始 history 數組，創建副本並反轉
+            chartData = [...history].reverse(); // 創建副本後反轉，避免影響原始數據
+            
             // 5分線 MACD 需要足夠的歷史數據，如果不夠就不計算
             if (history.length >= 26) {
-                macdData = chartData;
+                // 對於 MACD 計算，使用正確順序的數據（舊到新）
+                macdData = [...history]; // 使用副本，保持原始順序
             } else {
                 console.warn('Not enough 5min data for MACD, disabling MACD chart');
                 macdData = null;
             }
             timeUnit = 'minute';
             
-            console.log('Final 5min chart data length:', chartData.length);
+            console.log('5分線數據處理:', {
+                originalLength: history.length,
+                chartDataLength: chartData.length,
+                firstOriginal: history[0]?.date,
+                lastOriginal: history[history.length-1]?.date,
+                firstChart: chartData[0]?.date,
+                lastChart: chartData[chartData.length-1]?.date
+            });
         } else {
             // 🔧 修正：取最後30天資料 (最新的資料)
             chartData = history.slice(-30); // 取最後30天，不需要reverse
@@ -1418,7 +1435,9 @@ const App = {
         console.log('Chart data prepared:', {
             length: chartData.length,
             timeframe: this.state.chartTimeframe,
-            sampleData: chartData.slice(0, 3)
+            sampleData: chartData.slice(0, 3),
+            sampleDates: chartData.slice(0, 3).map(d => d.date),
+            stockDataSource: this.state.chartTimeframe === '5M' ? 'fetchStockData(5M)' : 'cached data'
         });
 
         // 繪製 K 線圖
