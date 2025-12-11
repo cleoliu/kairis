@@ -16,6 +16,19 @@ const apiKeyStatus = {
   }
 };
 
+// yfinance 數據獲取函數
+async function getYfinanceData(cleanSymbol, timeframe) {
+  try {
+    // 暫時返回 null，讓系統使用其他 API 獲取更多歷史數據
+    console.log(`[${new Date().toISOString()}] yfinance temporarily disabled, using fallback APIs for ${cleanSymbol}`);
+    return null;
+    
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] yfinance error for ${cleanSymbol}:`, error);
+    return null;
+  }
+}
+
 // Rate limit 控制
 // Twelve Data 免費版限制：8 requests/minute (每分鐘8次請求)
 // 為了安全起見，我們設置最小間隔為8秒，確保不超過限制
@@ -109,50 +122,39 @@ async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey) {
   console.log(`[${new Date().toISOString()}] Trying yfinance first for ${cleanSymbol}`);
   
   try {
-    // 使用絕對URL或構建完整的請求URL
-    const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
-    const yfinanceUrl = `${baseUrl}/api/yfinance-history?symbol=${cleanSymbol}&timeframe=${timeframe}`;
-    console.log(`[${new Date().toISOString()}] Fetching from yfinance URL: ${yfinanceUrl}`);
-    const yfinanceResponse = await fetch(yfinanceUrl);
+    // 直接調用 yfinance API 而不是內部 HTTP 請求（避免 Vercel 內部請求問題）
+    const yfinanceResult = await getYfinanceData(cleanSymbol, timeframe);
     
-    if (yfinanceResponse.ok) {
-      const yfinanceJson = await yfinanceResponse.json();
+    if (yfinanceResult && yfinanceResult.history && Array.isArray(yfinanceResult.history) && yfinanceResult.history.length > 0) {
+      historyData = yfinanceResult.history;
+      cacheTime = timeframe === '5M' ? 3600 : 86400 * 7; // 5分線快取1小時，日線快取7天
       
-      if (yfinanceJson.history && Array.isArray(yfinanceJson.history) && yfinanceJson.history.length > 0) {
-        historyData = yfinanceJson.history;
-        cacheTime = timeframe === '5M' ? 3600 : 86400 * 7; // 5分線快取1小時，日線快取7天
-        
-        // 更新 yfinance 成功狀態
-        apiKeyStatus.yfinance.working = true;
-        apiKeyStatus.yfinance.lastError = null;
-        apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
-        
-        console.log(`[${new Date().toISOString()}] Successfully used yfinance for ${cleanSymbol}:`, historyData.length, 'points');
-        return { data: historyData, cacheTime };
-      } else {
-        console.warn(`[${new Date().toISOString()}] yfinance returned empty data for ${cleanSymbol}`);
-        
-        // 更新 yfinance 錯誤狀態
-        apiKeyStatus.yfinance.working = false;
-        apiKeyStatus.yfinance.lastError = 'Empty data returned';
-        apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
-      }
+      // 更新 yfinance 成功狀態
+      apiKeyStatus.yfinance.working = true;
+      apiKeyStatus.yfinance.lastError = null;
+      apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
+      
+      console.log(`[${new Date().toISOString()}] Successfully used yfinance for ${cleanSymbol}:`, historyData.length, 'points');
+      return { data: historyData, cacheTime };
     } else {
-      console.warn(`[${new Date().toISOString()}] yfinance HTTP error for ${cleanSymbol}:`, yfinanceResponse.status, yfinanceResponse.statusText);
+      console.warn(`[${new Date().toISOString()}] yfinance returned empty data for ${cleanSymbol}`);
       
-      // 更新 yfinance HTTP 錯誤狀態
+      // 更新 yfinance 錯誤狀態
       apiKeyStatus.yfinance.working = false;
-      apiKeyStatus.yfinance.lastError = `HTTP ${yfinanceResponse.status}: ${yfinanceResponse.statusText}`;
+      apiKeyStatus.yfinance.lastError = 'Empty data returned';
       apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
     }
   } catch (error) {
-    console.warn(`[${new Date().toISOString()}] yfinance fetch error for ${cleanSymbol}:`, error.message);
+    console.warn(`[${new Date().toISOString()}] yfinance error for ${cleanSymbol}:`, error.message);
     
-    // 更新 yfinance 網路錯誤狀態
+    // 更新 yfinance 錯誤狀態
     apiKeyStatus.yfinance.working = false;
     apiKeyStatus.yfinance.lastError = error.message;
     apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
   }
+
+  // 如果 yfinance 失敗，提供詳細錯誤信息
+  console.log(`[${new Date().toISOString()}] yfinance failed for ${cleanSymbol}, error: ${apiKeyStatus.yfinance.lastError}`);
 
   // 如果 yfinance 失敗，使用原來的 API 作為 fallback
   console.log(`[${new Date().toISOString()}] yfinance failed, trying fallback APIs for ${cleanSymbol}`);
@@ -164,7 +166,7 @@ async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey) {
     console.log(`Fetching 5min data for ${cleanSymbol}`);
     
     // 使用Finnhub的分時數據作為主要來源
-    const intradayUrl = `https://finnhub.io/api/v1/stock/candle?symbol=${cleanSymbol}&resolution=5&from=${Math.floor(Date.now()/1000) - 86400}&to=${Math.floor(Date.now()/1000)}&token=${finnhubApiKey}`;
+    const intradayUrl = `https://finnhub.io/api/v1/stock/candle?symbol=${cleanSymbol}&resolution=5&from=${Math.floor(Date.now()/1000) - (5 * 86400)}&to=${Math.floor(Date.now()/1000)}&token=${finnhubApiKey}`;
     
     try {
       const intradayResponse = await fetch(intradayUrl);
@@ -245,7 +247,7 @@ async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey) {
           // 記錄請求
           recordRequest(keyType);
           
-          const twelveDataUrl = `https://api.twelvedata.com/time_series?symbol=${cleanSymbol}&interval=1day&outputsize=250&apikey=${apiKey}`;
+          const twelveDataUrl = `https://api.twelvedata.com/time_series?symbol=${cleanSymbol}&interval=1day&outputsize=5000&apikey=${apiKey}`;
           const twelveResponse = await fetch(twelveDataUrl);
           
           if (twelveResponse.ok) {
@@ -379,7 +381,7 @@ async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey) {
       console.log(`[${new Date().toISOString()}] Trying Finnhub as fallback for ${cleanSymbol} historical data`);
       
       try {
-        const finnhubHistoryUrl = `https://finnhub.io/api/v1/stock/candle?symbol=${cleanSymbol}&resolution=D&from=${Math.floor(Date.now()/1000) - (250 * 24 * 60 * 60)}&to=${Math.floor(Date.now()/1000)}&token=${finnhubApiKey}`;
+        const finnhubHistoryUrl = `https://finnhub.io/api/v1/stock/candle?symbol=${cleanSymbol}&resolution=D&from=${Math.floor(Date.now()/1000) - (730 * 24 * 60 * 60)}&to=${Math.floor(Date.now()/1000)}&token=${finnhubApiKey}`;
         const finnhubResponse = await fetch(finnhubHistoryUrl);
         
         if (finnhubResponse.ok) {
@@ -625,7 +627,7 @@ async function handleGetStockData(request, response) {
         
         // 使用 yfinance 作為備用方案獲取即時報價
         try {
-          const yfinanceQuoteUrl = `/api/yfinance-history?symbol=${finnhubSymbol}&timeframe=1D&limit=1`;
+          const yfinanceQuoteUrl = `/api/yfinance-history?symbol=${finnhubSymbol}&timeframe=1D`;
           const yfinanceResponse = await fetch(yfinanceQuoteUrl);
           
           if (yfinanceResponse.ok) {
