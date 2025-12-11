@@ -1,12 +1,1 @@
-{
-  "functions": {
-    "api/yfinance-history.py": {
-      "runtime": "python3.9"
-    }
-  },
-  "build": {
-    "env": {
-      "PYTHONPATH": "/var/task"
-    }
-  }
-}
+{}
