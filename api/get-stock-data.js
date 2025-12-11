@@ -109,7 +109,10 @@ async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey) {
   console.log(`[${new Date().toISOString()}] Trying yfinance first for ${cleanSymbol}`);
   
   try {
-    const yfinanceUrl = `/api/yfinance-history?symbol=${cleanSymbol}&timeframe=${timeframe}`;
+    // 使用絕對URL或構建完整的請求URL
+    const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+    const yfinanceUrl = `${baseUrl}/api/yfinance-history?symbol=${cleanSymbol}&timeframe=${timeframe}`;
+    console.log(`[${new Date().toISOString()}] Fetching from yfinance URL: ${yfinanceUrl}`);
     const yfinanceResponse = await fetch(yfinanceUrl);
     
     if (yfinanceResponse.ok) {
