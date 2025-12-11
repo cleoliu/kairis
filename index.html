@@ -1396,6 +1396,7 @@ const App = {
                                 }
                             }
                         }
+                    }
                 }
             });
             
@@ -1530,78 +1531,79 @@ const App = {
                     },
                     scales: {
                         x: {
-                        type: 'time',
-                        time: { 
-                            unit: timeUnit,
-                            displayFormats: {
-                                minute: 'HH:mm',
-                                day: 'MM/dd',
-                                week: 'MM/dd'
-                            }
-                        },
-                        grid: { 
-                            color: 'rgba(71, 85, 105, 0.3)',
-                            display: true
-                        },
-                        ticks: { 
-                            color: '#94a3b8',
-                            maxTicksLimit: 8
-                        }
-                    },
-                    y: {
-                        grid: { 
-                            color: 'rgba(71, 85, 105, 0.3)',
-                            display: true
-                        },
-                        ticks: { 
-                            color: '#94a3b8',
-                            callback: function(value) {
-                                return value.toFixed(4);
-                            }
-                        },
-                        beginAtZero: true
-                    }
-                },
-                plugins: {
-                    legend: {
-                        display: true,
-                        position: 'bottom',
-                        labels: {
-                            color: '#94a3b8',
-                            font: { size: 10 },
-                            usePointStyle: true,
-                            pointStyle: 'line',
-                            padding: 15
-                        }
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(30, 41, 59, 0.95)',
-                        titleColor: '#e2e8f0',
-                        bodyColor: '#e2e8f0',
-                        borderColor: '#475569',
-                        borderWidth: 1,
-                        callbacks: {
-                            title: function(context) {
-                                const date = new Date(context[0].parsed.x);
-                                return date.toLocaleDateString('zh-TW');
-                            },
-                            label: function(context) {
-                                const datasetLabel = context.dataset.label;
-                                const value = context.parsed.y;
-                                
-                                if (datasetLabel === 'MACD 柱狀圖') {
-                                    const trend = value >= 0 ? '多頭' : '空頭';
-                                    return `${datasetLabel}: ${value.toFixed(4)} (${trend})`;
-                                } else {
-                                    return `${datasetLabel}: ${value.toFixed(4)}`;
+                            type: 'time',
+                            time: { 
+                                unit: timeUnit,
+                                displayFormats: {
+                                    minute: 'HH:mm',
+                                    day: 'MM/dd',
+                                    week: 'MM/dd'
                                 }
                             },
-                            afterLabel: function(context) {
-                                if (context.datasetIndex === 0) {
-                                    const histogram = context.parsed.y;
-                                    return `趨勢強度: ${Math.abs(histogram).toFixed(4)}`;
+                            grid: { 
+                                color: 'rgba(71, 85, 105, 0.3)',
+                                display: true
+                            },
+                            ticks: { 
+                                color: '#94a3b8',
+                                maxTicksLimit: 8
+                            }
+                        },
+                        y: {
+                            grid: { 
+                                color: 'rgba(71, 85, 105, 0.3)',
+                                display: true
+                            },
+                            ticks: { 
+                                color: '#94a3b8',
+                                callback: function(value) {
+                                    return value.toFixed(4);
                                 }
-                                return null;
+                            },
+                            beginAtZero: true
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'bottom',
+                            labels: {
+                                color: '#94a3b8',
+                                font: { size: 10 },
+                                usePointStyle: true,
+                                pointStyle: 'line',
+                                padding: 15
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(30, 41, 59, 0.95)',
+                            titleColor: '#e2e8f0',
+                            bodyColor: '#e2e8f0',
+                            borderColor: '#475569',
+                            borderWidth: 1,
+                            callbacks: {
+                                title: function(context) {
+                                    const date = new Date(context[0].parsed.x);
+                                    return date.toLocaleDateString('zh-TW');
+                                },
+                                label: function(context) {
+                                    const datasetLabel = context.dataset.label;
+                                    const value = context.parsed.y;
+                                    
+                                    if (datasetLabel === 'MACD 柱狀圖') {
+                                        const trend = value >= 0 ? '多頭' : '空頭';
+                                        return `${datasetLabel}: ${value.toFixed(4)} (${trend})`;
+                                    } else {
+                                        return `${datasetLabel}: ${value.toFixed(4)}`;
+                                    }
+                                },
+                                afterLabel: function(context) {
+                                    if (context.datasetIndex === 0) {
+                                        const histogram = context.parsed.y;
+                                        return `趨勢強度: ${Math.abs(histogram).toFixed(4)}`;
+                                    }
+                                    return null;
+                                }
                             }
                         }
                     }
