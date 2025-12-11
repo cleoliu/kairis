@@ -9,6 +9,7 @@ const pendingRequests = new Map();
 
 // 追蹤 API key 狀態
 const apiKeyStatus = {
+  yfinance: { working: true, lastError: null, lastUsed: null },
   twelveData: {
     primary: { working: true, lastError: null, lastUsed: null },
     backup: { working: true, lastError: null, lastUsed: null }
@@ -103,6 +104,55 @@ export default async function handler(request, response) {
 async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey) {
   let historyData = null;
   let cacheTime;
+
+  // 首先嘗試使用 yfinance (無限制、免費)
+  console.log(`[${new Date().toISOString()}] Trying yfinance first for ${cleanSymbol}`);
+  
+  try {
+    const yfinanceUrl = `/api/yfinance-history?symbol=${cleanSymbol}&timeframe=${timeframe}`;
+    const yfinanceResponse = await fetch(yfinanceUrl);
+    
+    if (yfinanceResponse.ok) {
+      const yfinanceJson = await yfinanceResponse.json();
+      
+      if (yfinanceJson.history && Array.isArray(yfinanceJson.history) && yfinanceJson.history.length > 0) {
+        historyData = yfinanceJson.history;
+        cacheTime = timeframe === '5M' ? 3600 : 86400 * 7; // 5分線快取1小時，日線快取7天
+        
+        // 更新 yfinance 成功狀態
+        apiKeyStatus.yfinance.working = true;
+        apiKeyStatus.yfinance.lastError = null;
+        apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
+        
+        console.log(`[${new Date().toISOString()}] Successfully used yfinance for ${cleanSymbol}:`, historyData.length, 'points');
+        return { data: historyData, cacheTime };
+      } else {
+        console.warn(`[${new Date().toISOString()}] yfinance returned empty data for ${cleanSymbol}`);
+        
+        // 更新 yfinance 錯誤狀態
+        apiKeyStatus.yfinance.working = false;
+        apiKeyStatus.yfinance.lastError = 'Empty data returned';
+        apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
+      }
+    } else {
+      console.warn(`[${new Date().toISOString()}] yfinance HTTP error for ${cleanSymbol}:`, yfinanceResponse.status, yfinanceResponse.statusText);
+      
+      // 更新 yfinance HTTP 錯誤狀態
+      apiKeyStatus.yfinance.working = false;
+      apiKeyStatus.yfinance.lastError = `HTTP ${yfinanceResponse.status}: ${yfinanceResponse.statusText}`;
+      apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
+    }
+  } catch (error) {
+    console.warn(`[${new Date().toISOString()}] yfinance fetch error for ${cleanSymbol}:`, error.message);
+    
+    // 更新 yfinance 網路錯誤狀態
+    apiKeyStatus.yfinance.working = false;
+    apiKeyStatus.yfinance.lastError = error.message;
+    apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
+  }
+
+  // 如果 yfinance 失敗，使用原來的 API 作為 fallback
+  console.log(`[${new Date().toISOString()}] yfinance failed, trying fallback APIs for ${cleanSymbol}`);
 
   if (timeframe === '5M') {
     // 5分線數據 - 優先使用Finnhub
@@ -383,6 +433,7 @@ async function handleApiStatus(_, response) {
     const statusReport = {
       timestamp: new Date().toISOString(),
       environment: {
+        YFINANCE_AVAILABLE: true, // yfinance 不需要 API key
         FINNHUB_API_KEY: !!process.env.FINNHUB_API_KEY,
         TWELVE_DATA_API_KEY: !!process.env.TWELVE_DATA_API_KEY,
         TWELVE_DATA_API_KEY_BACKUP: !!process.env.TWELVE_DATA_API_KEY_BACKUP,
