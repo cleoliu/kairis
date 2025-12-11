@@ -706,49 +706,45 @@ async function handleGetStockData(request, response) {
           historyData = result.data;
           cacheTime = result.cacheTime;
         } catch (error) {
-          console.error(`[${new Date().toISOString()}] Failed to fetch historical data for ${cleanSymbol}:`, error);
-          // 創建多天的備用歷史數據點，而不是只有一天
-          if (quoteData && quoteData.price) {
-            console.warn(`[${new Date().toISOString()}] Creating fallback historical data for ${cleanSymbol} using current quote data`);
+          console.error(`[${new Date().toISOString()}] Yahoo Finance API failed for ${cleanSymbol}:`, error);
+          console.log(`[${new Date().toISOString()}] Trying yfinance-history API as fallback for ${cleanSymbol}`);
+          
+          // 如果 Yahoo Finance API 失敗，使用 Alpha Vantage 作為備用
+          try {
+            console.log(`[${new Date().toISOString()}] Trying Alpha Vantage as fallback for ${cleanSymbol}`);
             
-            historyData = [];
-            const currentDate = new Date();
-            // 創建過去30天的模擬數據，基於當前價格
-            for (let i = 29; i >= 0; i--) {
-              const date = new Date(currentDate);
-              date.setDate(date.getDate() - i);
+            const avUrl = timeframe === '5M' 
+              ? `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${cleanSymbol}&interval=5min&outputsize=full&apikey=demo`
+              : `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${cleanSymbol}&outputsize=full&apikey=demo`;
+            
+            const avResponse = await fetch(avUrl);
+            const avData = await avResponse.json();
+            
+            if (avData['Time Series (Daily)'] || avData['Time Series (5min)']) {
+              const timeSeries = avData['Time Series (Daily)'] || avData['Time Series (5min)'];
+              historyData = Object.entries(timeSeries)
+                .map(([date, values]) => ({
+                  date: timeframe === '5M' ? date : date,
+                  open: parseFloat(values['1. open']),
+                  high: parseFloat(values['2. high']),
+                  low: parseFloat(values['3. low']),
+                  close: parseFloat(values['4. close']),
+                  volume: parseInt(values['5. volume']) || 0
+                }))
+                .reverse() // 最新的在後
+                .slice(0, 2000); // 限制最多2000筆資料
               
-              // 跳過週末（假設這是交易日）
-              if (date.getDay() !== 0 && date.getDay() !== 6) {
-                // 添加一些微小的價格變動來模擬真實數據
-                const variation = (Math.random() - 0.5) * 0.02; // ±1% 變動
-                const simulatedPrice = quoteData.price * (1 + variation);
-                
-                historyData.push({
-                  date: date.toISOString().split('T')[0],
-                  open: simulatedPrice,
-                  high: Math.max(simulatedPrice, quoteData.high || simulatedPrice * 1.01),
-                  low: Math.min(simulatedPrice, quoteData.low || simulatedPrice * 0.99),
-                  close: simulatedPrice,
-                  volume: Math.floor(Math.random() * 1000000) + 100000 // 模擬成交量
-                });
-              }
+              cacheTime = timeframe === '5M' ? 3600 : 86400 * 7;
+              console.log(`[${new Date().toISOString()}] ✅ Alpha Vantage fallback success: ${historyData.length} points for ${cleanSymbol}`);
+            } else {
+              throw new Error('Alpha Vantage returned invalid data structure');
             }
-            
-            // 最後一天使用實際的當前數據
-            historyData.push({
-              date: new Date().toISOString().split('T')[0],
-              open: quoteData.price,
-              high: quoteData.high || quoteData.price,
-              low: quoteData.low || quoteData.price,
-              close: quoteData.price,
-              volume: 0
+          } catch (fallbackError) {
+            console.error(`[${new Date().toISOString()}] All data sources failed for ${cleanSymbol}:`, fallbackError);
+            return response.status(404).json({ 
+              error: `無法獲取 ${cleanSymbol} 的歷史資料`,
+              details: `Yahoo Finance: ${error.message}, Alpha Vantage: ${fallbackError.message}`
             });
-            
-            console.log(`[${new Date().toISOString()}] Created ${historyData.length} days of fallback data for ${cleanSymbol}`);
-            cacheTime = 3600; // 錯誤情況下快取1小時
-          } else {
-            return response.status(404).json({ error: error.message });
           }
         } finally {
           // 無論成功或失敗都要清理 pending request
