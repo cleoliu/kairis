@@ -40,13 +40,13 @@ class handler(BaseHTTPRequestHandler):
             
             # 根據 timeframe 設置參數
             if timeframe == '5M':
-                period = "1d"  # 1天的5分線數據
+                period = "5d"  # 5天的5分線數據（提供更多數據）
                 interval = "5m"
-                max_days = 1
+                max_days = 5
             else:
-                period = "1y"   # 1年的日線數據
+                period = "2y"   # 2年的日線數據（確保有足夠的交易日）
                 interval = "1d"
-                max_days = 365
+                max_days = 730
                 
             print(f"[{datetime.now().isoformat()}] Fetching yfinance data for {clean_symbol}, timeframe={timeframe}")
             

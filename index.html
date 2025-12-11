@@ -1275,28 +1275,43 @@ const App = {
 
         if (this.state.chartTimeframe === 'W') {
             // 週線需要更多的日線數據來生成足夠的週線數據
-            // 使用最多245天（約35週 x 7天）的數據來確保能生成35週的週線數據
-            const dailyDataForWeekly = history.slice(0, Math.min(245, history.length));
+            // 使用最多350天（約50週 x 7天）的數據來確保能生成足夠的週線數據
+            const dailyDataForWeekly = history.slice(0, Math.min(350, history.length));
             console.log('Daily data for weekly conversion:', dailyDataForWeekly.length);
             
-            chartData = this.calculateWeeklyData(dailyDataForWeekly, 35); // 調整到35週顯示週線數據
-            macdData = chartData; // 週線使用生成的週線數據
+            const weeklyData = this.calculateWeeklyData(dailyDataForWeekly, 50);
+            chartData = weeklyData.slice(0, 35); // 顯示35週
+            macdData = weeklyData; // MACD使用全部週線數據（50週）
             timeUnit = 'week';
             
-            console.log('Final weekly chart data length:', chartData.length);
+            console.log('Weekly chart data:', chartData.length, 'MACD data:', macdData.length);
         } else if (this.state.chartTimeframe === '5M') {
             // 5分線圖顯示當天所有數據
             chartData = history.reverse(); // 5分線數據已經是正確順序
-            macdData = chartData; // 5分線MACD使用相同數據
+            // 5分線 MACD 需要足夠的歷史數據，如果不夠就不計算
+            if (history.length >= 35) {
+                macdData = chartData;
+            } else {
+                console.warn('Not enough 5min data for MACD, disabling MACD chart');
+                macdData = null;
+            }
             timeUnit = 'minute';
             
             console.log('Final 5min chart data length:', chartData.length);
         } else {
-            // K線圖顯示最近30天，但MACD計算使用更多數據
+            // 日線圖顯示最近30天，但MACD計算使用更多數據
             chartData = history.slice(0, 30).reverse();
-            // MACD 計算使用最多60天的數據以確保準確性
-            macdData = history.slice(0, Math.min(60, history.length)).reverse();
+            // MACD 計算使用最多100天的數據以確保準確性
+            const macdDataLength = Math.min(100, history.length);
+            if (macdDataLength >= 35) {
+                macdData = history.slice(0, macdDataLength).reverse();
+            } else {
+                console.warn(`Not enough daily data for MACD (${macdDataLength}/35), disabling MACD chart`);
+                macdData = null;
+            }
             timeUnit = 'day';
+            
+            console.log('Daily chart data:', chartData.length, 'MACD data:', macdData?.length || 'disabled');
         }
 
         // 驗證圖表數據
@@ -1467,7 +1482,12 @@ const App = {
             console.log('K-line chart created successfully');
             
             // 繪製 MACD 圖表，使用更多的歷史數據進行計算
-            this.renderMACDChart(symbol, macdData, timeUnit);
+            if (macdData && macdData.length >= 35) {
+                this.renderMACDChart(symbol, macdData, timeUnit);
+            } else {
+                console.warn('Skipping MACD chart due to insufficient data');
+                this.renderMACDPlaceholder();
+            }
             
         } catch (error) {
             console.error('Error creating K-line chart:', error);
@@ -1686,6 +1706,19 @@ const App = {
             ctx.textAlign = 'center';
             ctx.fillText('MACD圖創建失敗: ' + error.message, macdCtx.width / 2, macdCtx.height / 2);
         }
+    },
+
+    renderMACDPlaceholder() {
+        const macdCtx = document.getElementById('macd-chart');
+        if (!macdCtx) return;
+        
+        const ctx = macdCtx.getContext('2d');
+        ctx.clearRect(0, 0, macdCtx.width, macdCtx.height);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('數據不足，無法計算 MACD 指標', macdCtx.width / 2, macdCtx.height / 2);
+        ctx.fillText('(需要至少 35 個數據點)', macdCtx.width / 2, macdCtx.height / 2 + 20);
     },
 
     calculateMACDHistory(chartData) {
