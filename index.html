@@ -1339,63 +1339,63 @@ const App = {
                     },
                     scales: {
                         x: {
-                        type: 'time',
-                        time: { 
-                            unit: timeUnit,
-                            displayFormats: {
-                                minute: 'HH:mm',
-                                day: 'MM/dd', 
-                                week: 'MM/dd'
-                            }
-                        },
-                        grid: { 
-                            color: 'rgba(71, 85, 105, 0.3)',
-                            display: true
-                        },
-                        ticks: { 
-                            color: '#94a3b8',
-                            maxTicksLimit: 8
-                        }
-                    },
-                    y: { 
-                        grid: { 
-                            color: 'rgba(71, 85, 105, 0.3)',
-                            display: true
-                        },
-                        ticks: { 
-                            color: '#94a3b8',
-                            callback: function(value) {
-                                return '$' + value.toFixed(2);
-                            }
-                        }
-                    }
-                },
-                plugins: {
-                    legend: { 
-                        display: false 
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(30, 41, 59, 0.95)',
-                        titleColor: '#e2e8f0',
-                        bodyColor: '#e2e8f0',
-                        borderColor: '#475569',
-                        borderWidth: 1,
-                        callbacks: {
-                            title: function(context) {
-                                const date = new Date(context[0].parsed.x);
-                                return date.toLocaleDateString('zh-TW');
+                            type: 'time',
+                            time: { 
+                                unit: timeUnit,
+                                displayFormats: {
+                                    minute: 'HH:mm',
+                                    day: 'MM/dd', 
+                                    week: 'MM/dd'
+                                }
                             },
-                            label: function(context) {
-                                const d = context.raw;
-                                return [
-                                    `開盤: $${d.o?.toFixed(2) || 'N/A'}`,
-                                    `最高: $${d.h?.toFixed(2) || 'N/A'}`,
-                                    `最低: $${d.l?.toFixed(2) || 'N/A'}`,
-                                    `收盤: $${d.c?.toFixed(2) || 'N/A'}`
-                                ];
+                            grid: { 
+                                color: 'rgba(71, 85, 105, 0.3)',
+                                display: true
+                            },
+                            ticks: { 
+                                color: '#94a3b8',
+                                maxTicksLimit: 8
+                            }
+                        },
+                        y: { 
+                            grid: { 
+                                color: 'rgba(71, 85, 105, 0.3)',
+                                display: true
+                            },
+                            ticks: { 
+                                color: '#94a3b8',
+                                callback: function(value) {
+                                    return '$' + value.toFixed(2);
+                                }
                             }
                         }
-                    }
+                    },
+                    plugins: {
+                        legend: { 
+                            display: false 
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(30, 41, 59, 0.95)',
+                            titleColor: '#e2e8f0',
+                            bodyColor: '#e2e8f0',
+                            borderColor: '#475569',
+                            borderWidth: 1,
+                            callbacks: {
+                                title: function(context) {
+                                    const date = new Date(context[0].parsed.x);
+                                    return date.toLocaleDateString('zh-TW');
+                                },
+                                label: function(context) {
+                                    const d = context.raw;
+                                    return [
+                                        `開盤: $${d.o?.toFixed(2) || 'N/A'}`,
+                                        `最高: $${d.h?.toFixed(2) || 'N/A'}`,
+                                        `最低: $${d.l?.toFixed(2) || 'N/A'}`,
+                                        `收盤: $${d.c?.toFixed(2) || 'N/A'}`
+                                    ];
+                                }
+                            }
+                        }
                 }
             });
             
