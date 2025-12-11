@@ -16,42 +16,76 @@ const apiKeyStatus = {
   }
 };
 
-// yfinance 數據獲取函數
+// yfinance 數據獲取函數 - 使用 Yahoo Finance 公開 API
 async function getYfinanceData(cleanSymbol, timeframe) {
   try {
-    console.log(`[${new Date().toISOString()}] Calling yfinance directly for ${cleanSymbol}, timeframe=${timeframe}`);
+    console.log(`[${new Date().toISOString()}] Using Yahoo Finance API directly for ${cleanSymbol}, timeframe=${timeframe}`);
     
-    // 使用絕對URL構建yfinance請求
-    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
-    const host = process.env.VERCEL_URL || 'localhost:3000';
-    const yfinanceUrl = `${protocol}://${host}/api/yfinance-history?symbol=${cleanSymbol}&timeframe=${timeframe}`;
+    // 計算時間範圍
+    const now = Math.floor(Date.now() / 1000);
+    let period1, period2, interval;
     
-    console.log(`[${new Date().toISOString()}] Fetching from yfinance URL: ${yfinanceUrl}`);
+    if (timeframe === '5M') {
+      period1 = now - (5 * 24 * 60 * 60); // 5天前
+      period2 = now;
+      interval = '5m';
+    } else {
+      period1 = now - (730 * 24 * 60 * 60); // 2年前 (730天)
+      period2 = now;
+      interval = '1d';
+    }
     
-    const response = await fetch(yfinanceUrl, {
-      method: 'GET',
+    // 使用 Yahoo Finance 公開 API
+    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?period1=${period1}&period2=${period2}&interval=${interval}&includePrePost=true`;
+    
+    console.log(`[${new Date().toISOString()}] Fetching from Yahoo Finance: ${yahooUrl}`);
+    
+    const response = await fetch(yahooUrl, {
       headers: {
-        'User-Agent': 'Kairis-App/1.0'
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
       }
     });
     
-    if (response.ok) {
-      const data = await response.json();
-      
-      if (data.history && Array.isArray(data.history) && data.history.length > 0) {
-        console.log(`[${new Date().toISOString()}] yfinance success: ${data.history.length} data points for ${cleanSymbol}`);
-        return data;
-      } else {
-        console.warn(`[${new Date().toISOString()}] yfinance returned empty data for ${cleanSymbol}`);
-        return null;
-      }
-    } else {
-      console.warn(`[${new Date().toISOString()}] yfinance HTTP error: ${response.status} ${response.statusText}`);
-      return null;
+    if (!response.ok) {
+      throw new Error(`Yahoo Finance API error: ${response.status}`);
     }
     
+    const data = await response.json();
+    
+    if (data.chart && data.chart.result && data.chart.result[0]) {
+      const result = data.chart.result[0];
+      const timestamps = result.timestamp;
+      const quotes = result.indicators.quote[0];
+      
+      if (!timestamps || !quotes) {
+        throw new Error('Invalid data structure from Yahoo Finance');
+      }
+      
+      const history = timestamps.map((timestamp, i) => {
+        const date = new Date(timestamp * 1000);
+        return {
+          date: timeframe === '5M' ? date.toISOString() : date.toISOString().split('T')[0],
+          open: quotes.open[i] || 0,
+          high: quotes.high[i] || 0,
+          low: quotes.low[i] || 0,
+          close: quotes.close[i] || 0,
+          volume: quotes.volume[i] || 0
+        };
+      }).filter(item => item.close > 0); // 過濾無效資料
+      
+      console.log(`[${new Date().toISOString()}] ✅ Yahoo Finance success: ${history.length} data points for ${cleanSymbol}`);
+      
+      return { 
+        history,
+        name: result.meta?.longName || result.meta?.shortName || cleanSymbol,
+        symbol: cleanSymbol 
+      };
+    }
+    
+    throw new Error('No data found in Yahoo Finance response');
+    
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] yfinance fetch error for ${cleanSymbol}:`, error.message);
+    console.error(`[${new Date().toISOString()}] Yahoo Finance fetch error for ${cleanSymbol}:`, error.message);
     return null;
   }
 }
@@ -140,54 +174,40 @@ export default async function handler(request, response) {
   }
 }
 
-// 獲取歷史數據的獨立函數
+// 獲取歷史數據的獨立函數 - 只使用 yfinance
 async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey) {
-  let historyData = null;
-  let cacheTime;
-
-  // 首先嘗試使用 yfinance (無限制、免費)
-  console.log(`[${new Date().toISOString()}] Trying yfinance first for ${cleanSymbol}`);
+  console.log(`[${new Date().toISOString()}] Using yfinance only for ${cleanSymbol}`);
   
   try {
-    // 直接調用 yfinance API 而不是內部 HTTP 請求（避免 Vercel 內部請求問題）
     const yfinanceResult = await getYfinanceData(cleanSymbol, timeframe);
     
     if (yfinanceResult && yfinanceResult.history && Array.isArray(yfinanceResult.history) && yfinanceResult.history.length > 0) {
-      historyData = yfinanceResult.history;
-      cacheTime = timeframe === '5M' ? 3600 : 86400 * 7; // 5分線快取1小時，日線快取7天
+      const historyData = yfinanceResult.history;
+      const cacheTime = timeframe === '5M' ? 3600 : 86400 * 7; // 5分線快取1小時，日線快取7天
       
       // 更新 yfinance 成功狀態
       apiKeyStatus.yfinance.working = true;
       apiKeyStatus.yfinance.lastError = null;
       apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
       
-      console.log(`[${new Date().toISOString()}] Successfully used yfinance for ${cleanSymbol}:`, historyData.length, 'points');
+      console.log(`[${new Date().toISOString()}] ✅ yfinance success: ${historyData.length} data points for ${cleanSymbol}`);
       return { data: historyData, cacheTime };
     } else {
-      console.warn(`[${new Date().toISOString()}] yfinance returned empty data for ${cleanSymbol}`);
-      
-      // 更新 yfinance 錯誤狀態
-      apiKeyStatus.yfinance.working = false;
-      apiKeyStatus.yfinance.lastError = 'Empty data returned';
-      apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
+      throw new Error('yfinance returned empty data');
     }
   } catch (error) {
-    console.warn(`[${new Date().toISOString()}] yfinance error for ${cleanSymbol}:`, error.message);
+    console.error(`[${new Date().toISOString()}] ❌ yfinance failed for ${cleanSymbol}:`, error.message);
     
     // 更新 yfinance 錯誤狀態
     apiKeyStatus.yfinance.working = false;
     apiKeyStatus.yfinance.lastError = error.message;
     apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
+    
+    throw new Error(`無法從 Yahoo Finance 獲取 ${cleanSymbol} 的歷史資料: ${error.message}`);
   }
 
-  // 如果 yfinance 失敗，提供詳細錯誤信息
-  console.log(`[${new Date().toISOString()}] yfinance failed for ${cleanSymbol}, error: ${apiKeyStatus.yfinance.lastError}`);
-
-  // 如果 yfinance 失敗，使用 Twelve Data 作為備用
-  console.log(`[${new Date().toISOString()}] yfinance failed, trying Twelve Data as fallback for ${cleanSymbol}`);
-
-  // 嘗試使用 Twelve Data API
-  if (!historyData) {
+  // 移除所有其他資料來源 (Twelve Data)
+  if (false) {
     console.log(`[${new Date().toISOString()}] Trying Twelve Data API for ${cleanSymbol}`);
     
     const twelveDataKeys = [
@@ -315,8 +335,8 @@ async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey) {
     }
   }
 
-  // 如果所有數據源都失敗，使用 Finnhub 作為最後的備用選項
-  if (!historyData) {
+  // 不使用 Finnhub 作為備用，只使用 yfinance
+  if (false && !historyData) {
     if (timeframe === '5M') {
       // 5分線數據 - 使用 Finnhub 作為最後備用
       cacheTime = 3600; // 快取 1 小時
