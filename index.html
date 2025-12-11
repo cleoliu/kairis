@@ -1639,49 +1639,62 @@ const App = {
                 return new Date(date).getTime();
             });
         } else {
-            // 日線：只顯示最後 30 天，確保與 K 線圖日期範圍完全一致
-            displayLength = 30;
+            // 日線：顯示 MACD 計算結果的最後 30 個有效值
+            // 🔧 關鍵修正：我們需要找到有效的 MACD 值及其對應的正確日期
             
-            // 取 MACD 計算結果的最後 30 個數據點
+            // 首先找出所有有效的 MACD 數據點及其索引
+            const validMacdIndices = [];
+            for (let i = 0; i < macdCalculation.histogram.length; i++) {
+                if (macdCalculation.histogram[i] !== null && 
+                    macdCalculation.histogram[i] !== undefined && 
+                    !isNaN(macdCalculation.histogram[i])) {
+                    validMacdIndices.push(i);
+                }
+            }
+            
+            console.log('Found valid MACD indices:', {
+                totalIndices: validMacdIndices.length,
+                firstValidIndex: validMacdIndices[0],
+                lastValidIndex: validMacdIndices[validMacdIndices.length - 1],
+                firstValidDate: macdData[validMacdIndices[0]]?.date,
+                lastValidDate: macdData[validMacdIndices[validMacdIndices.length - 1]]?.date
+            });
+            
+            // 取最後30個有效的MACD值
+            displayLength = Math.min(30, validMacdIndices.length);
+            const displayIndices = validMacdIndices.slice(-displayLength);
+            
             displayData = {
-                histogram: macdCalculation.histogram.slice(-displayLength),
-                macdLine: macdCalculation.macdLine.slice(-displayLength),
-                signalLine: macdCalculation.signalLine.slice(-displayLength)
+                histogram: displayIndices.map(i => macdCalculation.histogram[i]),
+                macdLine: displayIndices.map(i => macdCalculation.macdLine[i]),
+                signalLine: displayIndices.map(i => macdCalculation.signalLine[i])
             };
             
-            // 🔧 修正：使用原始歷史數據的最後 30 天來生成標籤，確保日期一致
-            // 注意：macdData 是用於計算的100天數據，我們需要取最後30天的日期
-            const last30DaysData = macdData.slice(-displayLength);
-            labels = last30DaysData.map(d => {
-                const date = d.date.includes('T') ? d.date : d.date + 'T00:00:00Z';
+            // 🔧 使用正確的日期：對應有效MACD值的實際日期
+            labels = displayIndices.map(i => {
+                const date = macdData[i].date.includes('T') ? macdData[i].date : macdData[i].date + 'T00:00:00Z';
                 return new Date(date).getTime();
             });
             
-            console.log('MACD display range:', {
+            console.log('MACD corrected display range:', {
                 displayLength,
-                firstDate: last30DaysData[0]?.date,
-                lastDate: last30DaysData[last30DaysData.length - 1]?.date,
-                totalMacdData: macdData.length
+                validIndicesUsed: displayIndices.slice(0, 5),
+                firstDisplayDate: macdData[displayIndices[0]]?.date,
+                lastDisplayDate: macdData[displayIndices[displayIndices.length - 1]]?.date,
+                totalValidMacdPoints: validMacdIndices.length
             });
         }
         
-        // 🔧 過濾有效數據 - 只顯示非 null 的 MACD 值
+        // 🔧 準備圖表數據 - 現在所有數據都已經是有效的
         const validDataPoints = [];
         for (let i = 0; i < displayData.histogram.length; i++) {
-            const histogramValue = displayData.histogram[i];
-            const macdValue = displayData.macdLine[i];
-            const signalValue = displayData.signalLine[i];
-            
-            // 只有當 histogram 值不是 null 或 undefined 時才添加到圖表
-            if (histogramValue !== null && histogramValue !== undefined && !isNaN(histogramValue)) {
-                validDataPoints.push({
-                    index: i,
-                    timestamp: labels[i],
-                    histogram: histogramValue,
-                    macd: macdValue !== null && macdValue !== undefined ? macdValue : 0,
-                    signal: signalValue !== null && signalValue !== undefined ? signalValue : 0
-                });
-            }
+            validDataPoints.push({
+                index: i,
+                timestamp: labels[i],
+                histogram: displayData.histogram[i],
+                macd: displayData.macdLine[i] !== null ? displayData.macdLine[i] : 0,
+                signal: displayData.signalLine[i] !== null ? displayData.signalLine[i] : 0
+            });
         }
 
         if (validDataPoints.length === 0) {
