@@ -1665,11 +1665,27 @@ const App = {
             });
         }
         
-        // 確保數據有效
-        const nonZeroCount = displayData.histogram.filter(val => val !== 0).length;
-        if (nonZeroCount === 0) {
-            console.warn('All MACD histogram values are zero, showing placeholder chart');
-            // 顯示空圖表但保留結構
+        // 🔧 過濾有效數據 - 只顯示非 null 的 MACD 值
+        const validDataPoints = [];
+        for (let i = 0; i < displayData.histogram.length; i++) {
+            const histogramValue = displayData.histogram[i];
+            const macdValue = displayData.macdLine[i];
+            const signalValue = displayData.signalLine[i];
+            
+            // 只有當 histogram 值不是 null 或 undefined 時才添加到圖表
+            if (histogramValue !== null && histogramValue !== undefined && !isNaN(histogramValue)) {
+                validDataPoints.push({
+                    index: i,
+                    timestamp: labels[i],
+                    histogram: histogramValue,
+                    macd: macdValue !== null && macdValue !== undefined ? macdValue : 0,
+                    signal: signalValue !== null && signalValue !== undefined ? signalValue : 0
+                });
+            }
+        }
+
+        if (validDataPoints.length === 0) {
+            console.warn('No valid MACD data points found, showing placeholder chart');
             ctx.clearRect(0, 0, macdCtx.width, macdCtx.height);
             ctx.fillStyle = '#94a3b8';
             ctx.font = '14px sans-serif';
@@ -1678,22 +1694,27 @@ const App = {
             return;
         }
 
-        console.log(`Found ${nonZeroCount} non-zero MACD values out of ${displayData.histogram.length} display points`);
+        console.log(`Found ${validDataPoints.length} valid MACD values out of ${displayData.histogram.length} total points`);
+        console.log('Valid MACD range:', {
+            firstDate: new Date(validDataPoints[0].timestamp).toLocaleDateString(),
+            lastDate: new Date(validDataPoints[validDataPoints.length - 1].timestamp).toLocaleDateString(),
+            sampleValues: validDataPoints.slice(0, 3).map(p => p.histogram)
+        });
 
-        // 準備時間軸數據
-        const timeAxisData = labels.map((timestamp, index) => ({
-            x: timestamp,
-            y: displayData.histogram[index] || 0
+        // 準備時間軸數據 - 只使用有效數據點
+        const timeAxisData = validDataPoints.map(point => ({
+            x: point.timestamp,
+            y: point.histogram
         }));
         
-        const difLineData = labels.map((timestamp, index) => ({
-            x: timestamp,
-            y: displayData.macdLine[index] || 0
+        const difLineData = validDataPoints.map(point => ({
+            x: point.timestamp,
+            y: point.macd
         }));
         
-        const deaLineData = labels.map((timestamp, index) => ({
-            x: timestamp,
-            y: displayData.signalLine[index] || 0
+        const deaLineData = validDataPoints.map(point => ({
+            x: point.timestamp,
+            y: point.signal
         }));
 
         try {
@@ -1705,11 +1726,11 @@ const App = {
                         {
                             label: 'MACD 柱狀圖',
                             data: timeAxisData,
-                            backgroundColor: displayData.histogram.map(value => 
-                                value >= 0 ? 'rgba(34, 197, 94, 0.6)' : 'rgba(239, 68, 68, 0.6)'
+                            backgroundColor: validDataPoints.map(point => 
+                                point.histogram >= 0 ? 'rgba(34, 197, 94, 0.6)' : 'rgba(239, 68, 68, 0.6)'
                             ),
-                            borderColor: displayData.histogram.map(value => 
-                                value >= 0 ? '#16a34a' : '#dc2626'
+                            borderColor: validDataPoints.map(point => 
+                                point.histogram >= 0 ? '#16a34a' : '#dc2626'
                             ),
                             borderWidth: 1,
                             borderSkipped: false,
@@ -2017,9 +2038,9 @@ const App = {
         }
         
         return {
-            macdLine: resultMacd.map(v => v === null ? 0 : v), // 🔧 將 null 轉為 0 供圖表顯示
-            signalLine: resultSignal.map(v => v === null ? 0 : v),
-            histogram: resultHistogram.map(v => v === null ? 0 : v),
+            macdLine: resultMacd, // 保持 null 值，讓圖表正確處理
+            signalLine: resultSignal,
+            histogram: resultHistogram,
             dates: chartData.map(d => d.date)
         };
     },
