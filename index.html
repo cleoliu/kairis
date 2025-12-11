@@ -493,6 +493,7 @@ const App = {
         const cacheKey = timeframe === '5M' ? `${symbol}_5M` : symbol;
         
         if (this.state.stockDataCache[cacheKey] && !this.state.stockDataCache[cacheKey].error && !forceRefresh) {
+            console.log(`Using cached data for ${symbol}${timeframe ? ` (${timeframe})` : ''}`);
             return this.state.stockDataCache[cacheKey];
         }
         
@@ -500,10 +501,12 @@ const App = {
 
         try {
             const url = timeframe ? `/api/get-stock-data?symbol=${symbol}&timeframe=${timeframe}` : `/api/get-stock-data?symbol=${symbol}`;
+            console.log(`[${new Date().toISOString()}] Fetching data from API for ${symbol}${timeframe ? ` (${timeframe})` : ''}`);
             const response = await fetch(url);
             const data = await response.json();
 
             if (!response.ok) {
+                console.error(`API error for ${symbol}:`, data.error);
                 const errorData = { error: data.error || '獲取資料失敗' };
                 this.state.stockDataCache[cacheKey] = errorData;
                 return errorData;
