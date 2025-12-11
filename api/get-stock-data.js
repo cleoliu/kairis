@@ -3,6 +3,7 @@
 // 需要在 Vercel 專案中連結 Vercel KV 儲存體
 
 import { kv } from '@vercel/kv';
+import { getYfinanceHistoryData } from './yfinance-shared.js';
 
 // 全局變數來追蹤正在進行的請求
 const pendingRequests = new Map();
@@ -16,76 +17,21 @@ const apiKeyStatus = {
   }
 };
 
-// yfinance 數據獲取函數 - 使用 Yahoo Finance 公開 API
+// yfinance 數據獲取函數 - 使用共用的 yfinance 邏輯
 async function getYfinanceData(cleanSymbol, timeframe) {
   try {
-    console.log(`[${new Date().toISOString()}] Using Yahoo Finance API directly for ${cleanSymbol}, timeframe=${timeframe}`);
+    console.log(`[${new Date().toISOString()}] Using shared yfinance logic for ${cleanSymbol}, timeframe=${timeframe}`);
     
-    // 計算時間範圍
-    const now = Math.floor(Date.now() / 1000);
-    let period1, period2, interval;
+    const result = await getYfinanceHistoryData(cleanSymbol, timeframe);
     
-    if (timeframe === '5M') {
-      period1 = now - (5 * 24 * 60 * 60); // 5天前
-      period2 = now;
-      interval = '5m';
+    if (result && result.history && Array.isArray(result.history) && result.history.length > 0) {
+      console.log(`[${new Date().toISOString()}] ✅ Shared yfinance success: ${result.history.length} data points for ${cleanSymbol}`);
+      return result;
     } else {
-      period1 = now - (730 * 24 * 60 * 60); // 2年前 (730天)
-      period2 = now;
-      interval = '1d';
+      throw new Error('No data returned from shared yfinance logic');
     }
-    
-    // 使用 Yahoo Finance 公開 API
-    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?period1=${period1}&period2=${period2}&interval=${interval}&includePrePost=true`;
-    
-    console.log(`[${new Date().toISOString()}] Fetching from Yahoo Finance: ${yahooUrl}`);
-    
-    const response = await fetch(yahooUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Yahoo Finance API error: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    if (data.chart && data.chart.result && data.chart.result[0]) {
-      const result = data.chart.result[0];
-      const timestamps = result.timestamp;
-      const quotes = result.indicators.quote[0];
-      
-      if (!timestamps || !quotes) {
-        throw new Error('Invalid data structure from Yahoo Finance');
-      }
-      
-      const history = timestamps.map((timestamp, i) => {
-        const date = new Date(timestamp * 1000);
-        return {
-          date: timeframe === '5M' ? date.toISOString() : date.toISOString().split('T')[0],
-          open: quotes.open[i] || 0,
-          high: quotes.high[i] || 0,
-          low: quotes.low[i] || 0,
-          close: quotes.close[i] || 0,
-          volume: quotes.volume[i] || 0
-        };
-      }).filter(item => item.close > 0); // 過濾無效資料
-      
-      console.log(`[${new Date().toISOString()}] ✅ Yahoo Finance success: ${history.length} data points for ${cleanSymbol}`);
-      
-      return { 
-        history,
-        name: result.meta?.longName || result.meta?.shortName || cleanSymbol,
-        symbol: cleanSymbol 
-      };
-    }
-    
-    throw new Error('No data found in Yahoo Finance response');
-    
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Yahoo Finance fetch error for ${cleanSymbol}:`, error.message);
+    console.error(`[${new Date().toISOString()}] Shared yfinance error for ${cleanSymbol}:`, error.message);
     return null;
   }
 }
