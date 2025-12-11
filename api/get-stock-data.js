@@ -3,7 +3,6 @@
 // 需要在 Vercel 專案中連結 Vercel KV 儲存體
 
 import { kv } from '@vercel/kv';
-import { getYfinanceHistoryData } from './yfinance-shared.js';
 
 // 全局變數來追蹤正在進行的請求
 const pendingRequests = new Map();
@@ -17,24 +16,113 @@ const apiKeyStatus = {
   }
 };
 
-// yfinance 數據獲取函數 - 使用改良的 Yahoo Finance API
+// yfinance 數據獲取函數 - 使用 Yahoo Finance 官方 API
 async function getYfinanceData(cleanSymbol, timeframe) {
   try {
-    console.log(`[${new Date().toISOString()}] Using enhanced Yahoo Finance API for ${cleanSymbol}, timeframe=${timeframe}`);
+    console.log(`[${new Date().toISOString()}] Using Yahoo Finance official API for ${cleanSymbol}, timeframe=${timeframe}`);
     
-    const result = await getYfinanceHistoryData(cleanSymbol, timeframe);
-    
-    if (result && result.history && Array.isArray(result.history) && result.history.length > 0) {
-      console.log(`[${new Date().toISOString()}] ✅ Enhanced Yahoo Finance success: ${result.history.length} data points for ${cleanSymbol}`);
-      return result;
+    // 設定時間範圍和間隔
+    let range, interval;
+    if (timeframe === '5M') {
+      range = '5d';    // 5天的5分線資料
+      interval = '5m';
     } else {
-      throw new Error('No data returned from enhanced Yahoo Finance API');
+      range = '2y';    // 2年的日線資料 (足夠計算 MACD)
+      interval = '1d';
     }
-  } catch (error) {
-    console.error(`[${new Date().toISOString()}] Enhanced Yahoo Finance failed for ${cleanSymbol}:`, error.message);
     
-    // 如果 Yahoo Finance JS API 失敗，嘗試使用 yfinance Python (但避免完整的內部 HTTP 呼叫)
-    console.log(`[${new Date().toISOString()}] Trying alternative approach for ${cleanSymbol}`);
+    // 使用 Yahoo Finance 官方 API 端點
+    const apiUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?range=${range}&interval=${interval}&includePrePost=true&includeAdjustedClose=true`;
+    
+    console.log(`[${new Date().toISOString()}] Fetching from Yahoo Finance: ${apiUrl}`);
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://finance.yahoo.com/',
+        'Origin': 'https://finance.yahoo.com'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Yahoo Finance API HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    // 檢查回應結構
+    if (!data.chart || !data.chart.result || !data.chart.result[0]) {
+      console.error('Invalid Yahoo Finance response:', data);
+      throw new Error('Invalid response structure from Yahoo Finance API');
+    }
+    
+    const result = data.chart.result[0];
+    
+    // 檢查是否有錯誤
+    if (data.chart.error) {
+      throw new Error(`Yahoo Finance API error: ${data.chart.error.description}`);
+    }
+    
+    const timestamps = result.timestamp;
+    const quotes = result.indicators?.quote?.[0];
+    const adjClose = result.indicators?.adjclose?.[0]?.adjclose;
+    
+    if (!timestamps || !quotes || timestamps.length === 0) {
+      console.error('No data in Yahoo Finance response');
+      throw new Error('No historical data found');
+    }
+    
+    // 轉換資料格式
+    const history = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      const timestamp = timestamps[i];
+      const open = quotes.open?.[i];
+      const high = quotes.high?.[i];
+      const low = quotes.low?.[i];
+      const close = adjClose?.[i] || quotes.close?.[i]; // 使用調整後收盤價
+      const volume = quotes.volume?.[i];
+      
+      // 跳過無效資料
+      if (close === null || close === undefined || isNaN(close)) {
+        continue;
+      }
+      
+      const date = new Date(timestamp * 1000);
+      
+      history.push({
+        date: timeframe === '5M' ? date.toISOString() : date.toISOString().split('T')[0],
+        open: open || close,
+        high: high || close,
+        low: low || close,
+        close: close,
+        volume: volume || 0
+      });
+    }
+    
+    // 按日期排序 (最新在後)
+    if (timeframe !== '5M') {
+      history.sort((a, b) => new Date(a.date) - new Date(b.date));
+    }
+    
+    console.log(`[${new Date().toISOString()}] ✅ Yahoo Finance success: ${history.length} data points for ${cleanSymbol}`);
+    
+    // 獲取股票名稱
+    const stockName = result.meta?.longName || result.meta?.shortName || cleanSymbol;
+    
+    return {
+      symbol: cleanSymbol,
+      name: stockName,
+      history: history,
+      source: 'yahoo-finance',
+      timeframe: timeframe,
+      total_points: history.length
+    };
+    
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Yahoo Finance API failed for ${cleanSymbol}:`, error.message);
     return null;
   }
 }
@@ -576,8 +664,8 @@ async function handleGetStockData(request, response) {
         
         // 使用 yfinance 作為備用方案獲取即時報價
         try {
-          // 使用共用的 yfinance 邏輯代替內部 HTTP 呼叫
-          const yfinanceData = await getYfinanceHistoryData(finnhubSymbol, 'D');
+          // 使用外部 yfinance API 服務
+          const yfinanceData = await getYfinanceData(finnhubSymbol, 'D');
             
           if (yfinanceData.history && yfinanceData.history.length > 0) {
             const latestData = yfinanceData.history[yfinanceData.history.length - 1];
