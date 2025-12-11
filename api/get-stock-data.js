@@ -19,12 +19,39 @@ const apiKeyStatus = {
 // yfinance 數據獲取函數
 async function getYfinanceData(cleanSymbol, timeframe) {
   try {
-    // 暫時返回 null，讓系統使用其他 API 獲取更多歷史數據
-    console.log(`[${new Date().toISOString()}] yfinance temporarily disabled, using fallback APIs for ${cleanSymbol}`);
-    return null;
+    console.log(`[${new Date().toISOString()}] Calling yfinance directly for ${cleanSymbol}, timeframe=${timeframe}`);
+    
+    // 使用絕對URL構建yfinance請求
+    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+    const host = process.env.VERCEL_URL || 'localhost:3000';
+    const yfinanceUrl = `${protocol}://${host}/api/yfinance-history?symbol=${cleanSymbol}&timeframe=${timeframe}`;
+    
+    console.log(`[${new Date().toISOString()}] Fetching from yfinance URL: ${yfinanceUrl}`);
+    
+    const response = await fetch(yfinanceUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Kairis-App/1.0'
+      }
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      
+      if (data.history && Array.isArray(data.history) && data.history.length > 0) {
+        console.log(`[${new Date().toISOString()}] yfinance success: ${data.history.length} data points for ${cleanSymbol}`);
+        return data;
+      } else {
+        console.warn(`[${new Date().toISOString()}] yfinance returned empty data for ${cleanSymbol}`);
+        return null;
+      }
+    } else {
+      console.warn(`[${new Date().toISOString()}] yfinance HTTP error: ${response.status} ${response.statusText}`);
+      return null;
+    }
     
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] yfinance error for ${cleanSymbol}:`, error);
+    console.error(`[${new Date().toISOString()}] yfinance fetch error for ${cleanSymbol}:`, error.message);
     return null;
   }
 }
@@ -156,77 +183,36 @@ async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey) {
   // 如果 yfinance 失敗，提供詳細錯誤信息
   console.log(`[${new Date().toISOString()}] yfinance failed for ${cleanSymbol}, error: ${apiKeyStatus.yfinance.lastError}`);
 
-  // 如果 yfinance 失敗，使用原來的 API 作為 fallback
-  console.log(`[${new Date().toISOString()}] yfinance failed, trying fallback APIs for ${cleanSymbol}`);
+  // 如果 yfinance 失敗，使用 Twelve Data 作為備用
+  console.log(`[${new Date().toISOString()}] yfinance failed, trying Twelve Data as fallback for ${cleanSymbol}`);
 
-  if (timeframe === '5M') {
-    // 5分線數據 - 優先使用Finnhub
-    cacheTime = 3600; // 快取 1 小時
+  // 嘗試使用 Twelve Data API
+  if (!historyData) {
+    console.log(`[${new Date().toISOString()}] Trying Twelve Data API for ${cleanSymbol}`);
     
-    console.log(`Fetching 5min data for ${cleanSymbol}`);
-    
-    // 使用Finnhub的分時數據作為主要來源
-    const intradayUrl = `https://finnhub.io/api/v1/stock/candle?symbol=${cleanSymbol}&resolution=5&from=${Math.floor(Date.now()/1000) - (5 * 86400)}&to=${Math.floor(Date.now()/1000)}&token=${finnhubApiKey}`;
-    
-    try {
-      const intradayResponse = await fetch(intradayUrl);
-      if (intradayResponse.ok) {
-        const intradayJson = await intradayResponse.json();
-        
-        if (intradayJson.s === 'ok' && intradayJson.c?.length > 0) {
-          console.log('Using Finnhub intraday data:', intradayJson.c.length, 'points');
-          
-          historyData = intradayJson.c.map((close, i) => ({
-            date: new Date(intradayJson.t[i] * 1000).toISOString(),
-            open: intradayJson.o[i],
-            high: intradayJson.h[i],
-            low: intradayJson.l[i],
-            close: close,
-            volume: intradayJson.v[i]
-          })).slice(-78); // 最多78個5分鐘K線
-        } else {
-          console.warn(`No intraday data available for ${cleanSymbol}`);
-          throw new Error(`找不到 ${cleanSymbol} 的5分線資料，可能此股票不支援分時數據`);
-        }
-      } else {
-        console.warn(`Finnhub intraday API request failed for ${cleanSymbol}, status: ${intradayResponse.status}`);
-        throw new Error(`從 Finnhub 獲取分時資料失敗: ${cleanSymbol}`);
-      }
-    } catch (error) {
-      console.error('Finnhub intraday fetch error:', error);
-      throw new Error(`獲取5分線資料時發生錯誤: ${cleanSymbol}`);
-    }
-  } else {
-    // 日線數據 - 改用 Twelve Data 作為主要來源
-    cacheTime = 86400 * 7; // 快取 7 天
-    
-    // 取得 Twelve Data API keys（主要和備用）
-    const primaryTwelveDataKey = process.env.TWELVE_DATA_API_KEY;
-    const backupTwelveDataKey = process.env.TWELVE_DATA_API_KEY_BACKUP || '47fcfd493dbe4a7f89af1109ba980064';
-    const twelveDataKeys = [primaryTwelveDataKey, backupTwelveDataKey].filter(key => key);
-    
-    console.log(`Available Twelve Data keys: ${twelveDataKeys.length} (primary: ${!!primaryTwelveDataKey}, backup: ${!!backupTwelveDataKey})`);
-    
-    // 使用 Twelve Data API 獲取歷史數據（嘗試多個 keys）
-    if (twelveDataKeys.length > 0) {
-      for (let i = 0; i < twelveDataKeys.length; i++) {
-        const apiKey = twelveDataKeys[i];
-        const keyType = i === 0 ? 'primary' : 'backup';
-        
+    const twelveDataKeys = [
+      { key: process.env.TWELVE_DATA_API_KEY, type: 'primary' },
+      { key: process.env.TWELVE_DATA_BACKUP_API_KEY, type: 'backup' }
+    ].filter(item => item.key);
+
+    for (const { key: apiKey, type: keyType } of twelveDataKeys) {
+      if (historyData) break;
+
+      try {
         // 檢查是否可以發起請求（rate limit 控制）
-        if (!canMakeRequest(keyType)) {
-          // 如果是最後一個 key 且無法使用，等待一下再試
-          if (i === twelveDataKeys.length - 1) {
-            const control = rateLimitControl.twelveData[keyType];
-            const waitTime = control.isRateLimited 
-              ? Math.max(0, control.rateLimitResetTime - Date.now())
-              : Math.max(0, control.minInterval - (Date.now() - control.lastRequest));
-              
-            if (waitTime > 0 && waitTime < 5000) { // 最多等待5秒
+        if (canMakeRequest(keyType)) {
+          // 等待必要的間隔時間
+          const control = rateLimitControl.twelveData[keyType];
+          const waitTime = control.isRateLimited 
+            ? Math.max(0, control.rateLimitResetTime - Date.now())
+            : Math.max(0, (control.lastRequest + control.minInterval) - Date.now());
+
+          if (waitTime > 0) {
+            if (waitTime <= 10000) { // 最多等待10秒
               console.log(`[${new Date().toISOString()}] Waiting ${waitTime}ms for Twelve Data ${keyType} key rate limit`);
-              await sleep(waitTime);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
               
-              // 重新檢查
+              // 重新檢查是否可以發請求
               if (!canMakeRequest(keyType)) {
                 console.warn(`[${new Date().toISOString()}] Still rate limited after waiting, skipping Twelve Data ${keyType} key`);
                 continue;
@@ -235,150 +221,144 @@ async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey) {
               console.warn(`[${new Date().toISOString()}] Rate limit wait time too long (${waitTime}ms), skipping Twelve Data ${keyType} key`);
               continue;
             }
-          } else {
-            console.log(`[${new Date().toISOString()}] Skipping rate limited Twelve Data ${keyType} key, trying next`);
-            continue;
           }
+        } else {
+          console.log(`[${new Date().toISOString()}] Skipping rate limited Twelve Data ${keyType} key, trying next`);
+          continue;
         }
+
+        // 記錄請求
+        recordRequest(keyType);
         
-        try {
-          console.log(`[${new Date().toISOString()}] Trying Twelve Data API with ${keyType} key for ${cleanSymbol}`);
+        const twelveDataUrl = `https://api.twelvedata.com/time_series?symbol=${cleanSymbol}&interval=1day&outputsize=5000&apikey=${apiKey}`;
+        const twelveResponse = await fetch(twelveDataUrl);
+        
+        if (twelveResponse.ok) {
+          const twelveJson = await twelveResponse.json();
           
-          // 記錄請求
-          recordRequest(keyType);
-          
-          const twelveDataUrl = `https://api.twelvedata.com/time_series?symbol=${cleanSymbol}&interval=1day&outputsize=5000&apikey=${apiKey}`;
-          const twelveResponse = await fetch(twelveDataUrl);
-          
-          if (twelveResponse.ok) {
-            const twelveJson = await twelveResponse.json();
-            
-            // 檢查是否有錯誤響應（API 配額用完等）
-            if (twelveJson.code && twelveJson.message) {
-              console.warn(`[${new Date().toISOString()}] Twelve Data ${keyType} key error for ${cleanSymbol}:`, {
-                code: twelveJson.code,
-                message: twelveJson.message,
-                status: twelveJson.status || 'unknown'
-              });
-              
-              // 檢查是否是 rate limit 錯誤
-              if (twelveJson.code === 429 || twelveJson.message.toLowerCase().includes('rate limit') || 
-                  twelveJson.message.toLowerCase().includes('quota') || twelveJson.message.toLowerCase().includes('limit exceeded')) {
-                console.warn(`[${new Date().toISOString()}] Rate limit detected for Twelve Data ${keyType} key`);
-                
-                // 設置 rate limit 狀態
-                const control = rateLimitControl.twelveData[keyType];
-                control.isRateLimited = true;
-                // 設置重置時間為1小時後（或根據 API 回應調整）
-                control.rateLimitResetTime = Date.now() + (60 * 60 * 1000);
-                
-                // 更新 API key 狀態
-                apiKeyStatus.twelveData[keyType].working = false;
-                apiKeyStatus.twelveData[keyType].lastError = `Rate Limited: ${twelveJson.message}`;
-              } else {
-                // 更新 API key 狀態
-                apiKeyStatus.twelveData[keyType].working = false;
-                apiKeyStatus.twelveData[keyType].lastError = `${twelveJson.code}: ${twelveJson.message}`;
-              }
-              
-              apiKeyStatus.twelveData[keyType].lastUsed = new Date().toISOString();
-              
-              if (i === twelveDataKeys.length - 1) {
-                console.error(`[${new Date().toISOString()}] All Twelve Data keys failed for ${cleanSymbol}, will use Finnhub as fallback`);
-              }
-              continue; // 嘗試下一個 key
-            }
-            
-            if (twelveJson.values && Array.isArray(twelveJson.values)) {
-              historyData = twelveJson.values.map(item => ({
-                date: item.datetime,
-                open: parseFloat(item.open),
-                high: parseFloat(item.high),
-                low: parseFloat(item.low),
-                close: parseFloat(item.close),
-                volume: parseInt(item.volume)
-              })).reverse(); // Twelve Data 返回最新的在前，需要反轉
-              
-              console.log(`[${new Date().toISOString()}] Successfully used Twelve Data ${keyType} key:`, historyData.length, 'points');
-              
-              // 更新 API key 成功狀態
-              apiKeyStatus.twelveData[keyType].working = true;
-              apiKeyStatus.twelveData[keyType].lastError = null;
-              apiKeyStatus.twelveData[keyType].lastUsed = new Date().toISOString();
-              
-              break; // 成功獲取數據，跳出循環
-            } else {
-              console.warn(`[${new Date().toISOString()}] Twelve Data ${keyType} key returned invalid data format for ${cleanSymbol}:`, {
-                hasValues: !!twelveJson.values,
-                isArray: Array.isArray(twelveJson.values),
-                valuesLength: twelveJson.values?.length,
-                response: JSON.stringify(twelveJson).substring(0, 200) + '...'
-              });
-              
-              // 更新 API key 狀態
-              apiKeyStatus.twelveData[keyType].working = false;
-              apiKeyStatus.twelveData[keyType].lastError = 'Invalid data format returned';
-              apiKeyStatus.twelveData[keyType].lastUsed = new Date().toISOString();
-              
-              continue; // 嘗試下一個 key
-            }
-          } else {
-            console.warn(`[${new Date().toISOString()}] Twelve Data ${keyType} key HTTP error for ${cleanSymbol}:`, {
-              status: twelveResponse.status,
-              statusText: twelveResponse.statusText,
-              headers: {
-                'x-ratelimit-remaining': twelveResponse.headers.get('x-ratelimit-remaining'),
-                'x-ratelimit-reset': twelveResponse.headers.get('x-ratelimit-reset')
-              }
-            });
-            
-            // 檢查是否是 rate limit HTTP 錯誤
-            if (twelveResponse.status === 429) {
-              console.warn(`[${new Date().toISOString()}] HTTP 429 Rate limit detected for Twelve Data ${keyType} key`);
+          // 檢查是否有錯誤響應（API 配額用完等）
+          if (twelveJson.code || twelveJson.status === 'error') {
+            // 檢查是否是 rate limit 錯誤
+            if (twelveJson.code === 429 || twelveJson.message.toLowerCase().includes('rate limit') || 
+                twelveJson.message.toLowerCase().includes('quota') || twelveJson.message.toLowerCase().includes('limit exceeded')) {
+              console.warn(`[${new Date().toISOString()}] Rate limit detected for Twelve Data ${keyType} key`);
               
               // 設置 rate limit 狀態
               const control = rateLimitControl.twelveData[keyType];
               control.isRateLimited = true;
+              control.rateLimitResetTime = Date.now() + (60 * 60 * 1000);
               
-              // 嘗試從 header 獲取重置時間
-              const resetHeader = twelveResponse.headers.get('x-ratelimit-reset');
-              if (resetHeader) {
-                control.rateLimitResetTime = parseInt(resetHeader) * 1000; // 轉換為毫秒
-              } else {
-                // 默認1小時後重置
-                control.rateLimitResetTime = Date.now() + (60 * 60 * 1000);
-              }
-              
-              apiKeyStatus.twelveData[keyType].working = false;
-              apiKeyStatus.twelveData[keyType].lastError = `HTTP 429: Rate Limited`;
+              apiKeyStatus.twelveData[keyType].lastError = `Rate Limited: ${twelveJson.message}`;
+              continue; // 嘗試下一個 API key
             } else {
-              // 更新 API key HTTP 錯誤狀態
-              apiKeyStatus.twelveData[keyType].working = false;
-              apiKeyStatus.twelveData[keyType].lastError = `HTTP ${twelveResponse.status}: ${twelveResponse.statusText}`;
+              console.warn(`[${new Date().toISOString()}] Twelve Data ${keyType} key API error:`, twelveJson.message || twelveJson.code);
+              apiKeyStatus.twelveData[keyType].lastError = `API Error: ${twelveJson.message || twelveJson.code}`;
+              continue; // 嘗試下一個 API key
+            }
+          }
+
+          if (twelveJson.values && Array.isArray(twelveJson.values) && twelveJson.values.length > 0) {
+            // 轉換 Twelve Data 格式到標準格式
+            historyData = twelveJson.values.map(item => ({
+              date: item.datetime,
+              open: parseFloat(item.open),
+              high: parseFloat(item.high),
+              low: parseFloat(item.low),
+              close: parseFloat(item.close),
+              volume: parseInt(item.volume) || 0
+            }));
+            
+            cacheTime = 86400 * 7; // 7天快取
+            console.log(`[${new Date().toISOString()}] Successfully used Twelve Data ${keyType} key:`, historyData.length, 'points');
+            
+            // 更新成功狀態
+            apiKeyStatus.twelveData[keyType].working = true;
+            apiKeyStatus.twelveData[keyType].lastError = null;
+            
+            // 記錄響應頭信息
+            console.log(`[${new Date().toISOString()}] Twelve Data ${keyType} response headers:`, {
+              'x-ratelimit-remaining': twelveResponse.headers.get('x-ratelimit-remaining'),
+              'x-ratelimit-reset': twelveResponse.headers.get('x-ratelimit-reset')
+            });
+            break; // 成功獲取數據，退出循環
+          } else {
+            console.warn(`[${new Date().toISOString()}] Twelve Data ${keyType} key returned no data for ${cleanSymbol}`);
+            apiKeyStatus.twelveData[keyType].lastError = 'No data returned';
+          }
+        } else {
+          // 檢查是否是 rate limit HTTP 錯誤
+          if (twelveResponse.status === 429) {
+            console.warn(`[${new Date().toISOString()}] HTTP 429 Rate limit detected for Twelve Data ${keyType} key`);
+            
+            // 設置 rate limit 狀態
+            const control = rateLimitControl.twelveData[keyType];
+            control.isRateLimited = true;
+            
+            const resetHeader = twelveResponse.headers.get('x-ratelimit-reset');
+            if (resetHeader) {
+              control.rateLimitResetTime = parseInt(resetHeader) * 1000; // 轉換為毫秒
+            } else {
+              control.rateLimitResetTime = Date.now() + (60 * 60 * 1000);
             }
             
-            apiKeyStatus.twelveData[keyType].lastUsed = new Date().toISOString();
-            continue; // 嘗試下一個 key
+            apiKeyStatus.twelveData[keyType].lastError = `HTTP 429: Rate Limited`;
+            continue;
+          } else {
+            console.warn(`[${new Date().toISOString()}] Twelve Data ${keyType} key HTTP error:`, twelveResponse.status, twelveResponse.statusText);
+            apiKeyStatus.twelveData[keyType].lastError = `HTTP ${twelveResponse.status}: ${twelveResponse.statusText}`;
           }
-        } catch (error) {
-          console.error(`Twelve Data ${keyType} key fetch error:`, error);
-          
-          // 更新 API key 錯誤狀態
-          apiKeyStatus.twelveData[keyType].working = false;
-          apiKeyStatus.twelveData[keyType].lastError = error.message;
-          apiKeyStatus.twelveData[keyType].lastUsed = new Date().toISOString();
-          
-          if (i === twelveDataKeys.length - 1) {
-            console.error('All Twelve Data keys exhausted, will use Finnhub as fallback');
-          }
-          continue; // 嘗試下一個 key
         }
+      } catch (error) {
+        console.error(`[${new Date().toISOString()}] Twelve Data ${keyType} key error:`, error.message);
+        apiKeyStatus.twelveData[keyType].lastError = error.message;
       }
     }
-    
-    // 如果 Twelve Data 失敗，使用 Finnhub 作為備用
-    if (!historyData) {
-      console.log(`[${new Date().toISOString()}] Trying Finnhub as fallback for ${cleanSymbol} historical data`);
+  }
+
+  // 如果所有數據源都失敗，使用 Finnhub 作為最後的備用選項
+  if (!historyData) {
+    if (timeframe === '5M') {
+      // 5分線數據 - 使用 Finnhub 作為最後備用
+      cacheTime = 3600; // 快取 1 小時
+      
+      console.log(`[${new Date().toISOString()}] Trying Finnhub as final fallback for 5min data: ${cleanSymbol}`);
+      
+      // 使用Finnhub的分時數據作為最後備用選項
+      const intradayUrl = `https://finnhub.io/api/v1/stock/candle?symbol=${cleanSymbol}&resolution=5&from=${Math.floor(Date.now()/1000) - (5 * 86400)}&to=${Math.floor(Date.now()/1000)}&token=${finnhubApiKey}`;
+      
+      try {
+        const intradayResponse = await fetch(intradayUrl);
+        if (intradayResponse.ok) {
+          const intradayJson = await intradayResponse.json();
+          
+          if (intradayJson.s === 'ok' && intradayJson.c?.length > 0) {
+            console.log(`[${new Date().toISOString()}] Using Finnhub intraday data as final fallback:`, intradayJson.c.length, 'points');
+            
+            historyData = intradayJson.c.map((close, i) => ({
+              date: new Date(intradayJson.t[i] * 1000).toISOString(),
+              open: intradayJson.o[i],
+              high: intradayJson.h[i],
+              low: intradayJson.l[i],
+              close: close,
+              volume: intradayJson.v[i]
+            })).slice(-78); // 最多78個5分鐘K線
+          } else {
+            console.warn(`[${new Date().toISOString()}] No intraday data available for ${cleanSymbol}`);
+            throw new Error(`找不到 ${cleanSymbol} 的5分線資料，可能此股票不支援分時數據`);
+          }
+        } else {
+          console.warn(`[${new Date().toISOString()}] Finnhub intraday API request failed for ${cleanSymbol}, status: ${intradayResponse.status}`);
+          throw new Error(`從 Finnhub 獲取分時資料失敗: ${cleanSymbol}`);
+        }
+      } catch (error) {
+        console.error(`[${new Date().toISOString()}] Finnhub intraday fetch error:`, error);
+        throw new Error(`獲取5分線資料時發生錯誤: ${cleanSymbol}`);
+      }
+    } else {
+      // 日線數據 - 使用 Finnhub 作為最後備用
+      cacheTime = 86400 * 7; // 快取 7 天
+      
+      console.log(`[${new Date().toISOString()}] Trying Finnhub as final fallback for daily data: ${cleanSymbol}`);
       
       try {
         const finnhubHistoryUrl = `https://finnhub.io/api/v1/stock/candle?symbol=${cleanSymbol}&resolution=D&from=${Math.floor(Date.now()/1000) - (730 * 24 * 60 * 60)}&to=${Math.floor(Date.now()/1000)}&token=${finnhubApiKey}`;
@@ -408,7 +388,7 @@ async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey) {
               volume: finnhubJson.v[i]
             })).reverse(); // Finnhub返回的數據是倒序的
             
-            console.log(`[${new Date().toISOString()}] Successfully using Finnhub daily data as fallback for ${cleanSymbol}:`, historyData.length, 'points');
+            console.log(`[${new Date().toISOString()}] Successfully using Finnhub daily data as final fallback for ${cleanSymbol}:`, historyData.length, 'points');
           } else {
             console.warn(`[${new Date().toISOString()}] Finnhub returned invalid data for ${cleanSymbol}:`, {
               status: finnhubJson.s,
@@ -421,11 +401,11 @@ async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey) {
       } catch (error) {
         console.error(`[${new Date().toISOString()}] Finnhub daily fetch error for ${cleanSymbol}:`, error);
       }
-    }
-    
-    if (!historyData) {
-      console.warn(`No historical data found for ${cleanSymbol}, will create placeholder data`);
-      throw new Error(`找不到 ${cleanSymbol} 的歷史資料`);
+      
+      if (!historyData) {
+        console.warn(`No historical data found for ${cleanSymbol}, will create placeholder data`);
+        throw new Error(`找不到 ${cleanSymbol} 的歷史資料`);
+      }
     }
   }
 
