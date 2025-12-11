@@ -1094,8 +1094,32 @@ const App = {
                 await this.renderAdvancedChart(symbol);
                 document.querySelectorAll('.chart-timeframe-btn').forEach(btn => {
                     btn.addEventListener('click', async (e) => {
-                        this.state.chartTimeframe = e.currentTarget.dataset.timeframe;
-                        await this.renderDetailTabContent(symbol);
+                        const button = e.currentTarget;
+                        const newTimeframe = button.dataset.timeframe;
+                        
+                        // 🔧 防止重複點擊和添加錯誤處理
+                        if (button.disabled || this.state.chartTimeframe === newTimeframe) {
+                            return; // 避免重複處理
+                        }
+                        
+                        try {
+                            // 暫時禁用所有按鈕，防止快速點擊
+                            document.querySelectorAll('.chart-timeframe-btn').forEach(b => b.disabled = true);
+                            
+                            console.log(`🔄 切換圖表時間框架: ${this.state.chartTimeframe} -> ${newTimeframe}`);
+                            this.state.chartTimeframe = newTimeframe;
+                            
+                            await this.renderDetailTabContent(symbol);
+                            console.log(`✅ 圖表切換完成: ${newTimeframe}`);
+                            
+                        } catch (error) {
+                            console.error('❌ 圖表切換失敗:', error);
+                            // 如果切換失敗，恢復到上一個狀態
+                            console.log('🔙 恢復到上一個時間框架');
+                        } finally {
+                            // 重新啟用所有按鈕
+                            document.querySelectorAll('.chart-timeframe-btn').forEach(b => b.disabled = false);
+                        }
                     });
                 });
                 break;
@@ -1319,18 +1343,23 @@ const App = {
         console.log('開始渲染圖表，symbol:', symbol, 'timeframe:', this.state.chartTimeframe);
         
         // 清理現有圖表
-        if (this.state.advancedChartInstance) {
-            this.state.advancedChartInstance.destroy();
-            this.state.advancedChartInstance = null;
-        }
-        if (this.state.macdChartInstance) {
-            this.state.macdChartInstance.destroy();
-            this.state.macdChartInstance = null;
+        try {
+            if (this.state.advancedChartInstance) {
+                this.state.advancedChartInstance.destroy();
+                this.state.advancedChartInstance = null;
+            }
+            if (this.state.macdChartInstance) {
+                this.state.macdChartInstance.destroy();
+                this.state.macdChartInstance = null;
+            }
+        } catch (cleanupError) {
+            console.warn('清理圖表時出錯:', cleanupError);
         }
         
-        // 檢查 Canvas 元素是否存在
-        const chartCanvas = document.getElementById('advanced-chart');
-        const macdCanvas = document.getElementById('macd-chart');
+        try {
+            // 檢查 Canvas 元素是否存在
+            const chartCanvas = document.getElementById('advanced-chart');
+            const macdCanvas = document.getElementById('macd-chart');
         
         if (!chartCanvas || !macdCanvas) {
             console.error('Chart canvas elements not found:', {
@@ -1615,12 +1644,36 @@ const App = {
         } catch (error) {
             console.error('Error creating K-line chart:', error);
             
-            // 顯示錯誤信息
-            ctx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
-            ctx.fillStyle = '#ef4444';
-            ctx.font = '14px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('K線圖創建失敗: ' + error.message, chartCanvas.width / 2, chartCanvas.height / 2);
+                // 顯示錯誤信息
+                ctx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+                ctx.fillStyle = '#ef4444';
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('K線圖創建失敗: ' + error.message, chartCanvas.width / 2, chartCanvas.height / 2);
+            }
+        } catch (renderError) {
+            console.error('❌ renderAdvancedChart 整體錯誤:', renderError);
+            // 確保UI不會被卡住，顯示錯誤信息
+            const chartCanvas = document.getElementById('advanced-chart');
+            const macdCanvas = document.getElementById('macd-chart');
+            
+            if (chartCanvas) {
+                const ctx = chartCanvas.getContext('2d');
+                ctx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+                ctx.fillStyle = '#ef4444';
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('圖表載入失敗，請重試', chartCanvas.width / 2, chartCanvas.height / 2);
+            }
+            
+            if (macdCanvas) {
+                const ctx = macdCanvas.getContext('2d');
+                ctx.clearRect(0, 0, macdCanvas.width, macdCanvas.height);
+                ctx.fillStyle = '#ef4444';
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('MACD 載入失敗', macdCanvas.width / 2, macdCanvas.height / 2);
+            }
         }
     },
 
