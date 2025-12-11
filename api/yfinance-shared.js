@@ -20,20 +20,51 @@ async function getYfinanceHistoryData(cleanSymbol, timeframe = 'D') {
     }
     
     // 使用與 yfinance Python 庫相同的 Yahoo Finance API 端點
-    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?period1=${period1}&period2=${period2}&interval=${interval}&includePrePost=true&includeAdjustedClose=true`;
+    // 先嘗試 query2，失敗則嘗試 query1
+    const yahooUrls = [
+      `https://query2.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?period1=${period1}&period2=${period2}&interval=${interval}&includePrePost=true&includeAdjustedClose=true`,
+      `https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?period1=${period1}&period2=${period2}&interval=${interval}&includePrePost=true&includeAdjustedClose=true`
+    ];
     
     console.log(`[${new Date().toISOString()}] Fetching from Yahoo Finance: ${cleanSymbol}`);
     
-    const response = await fetch(yahooUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'application/json',
-        'Accept-Language': 'en-US,en;q=0.9'
-      }
-    });
+    let response;
+    let lastError;
     
-    if (!response.ok) {
-      throw new Error(`Yahoo Finance HTTP ${response.status}: ${response.statusText}`);
+    // 嘗試多個 Yahoo Finance 端點
+    for (const yahooUrl of yahooUrls) {
+      try {
+        response = await fetch(yahooUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Referer': 'https://finance.yahoo.com/',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-site'
+          }
+        });
+        
+        if (response.ok) {
+          console.log(`[${new Date().toISOString()}] Successfully connected to ${yahooUrl}`);
+          break; // 成功就跳出循環
+        } else {
+          console.warn(`[${new Date().toISOString()}] ${yahooUrl} returned ${response.status}`);
+          lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+      } catch (fetchError) {
+        console.warn(`[${new Date().toISOString()}] Failed to fetch from ${yahooUrl}:`, fetchError.message);
+        lastError = fetchError;
+        continue; // 嘗試下一個 URL
+      }
+    }
+    
+    // 如果所有 URL 都失敗
+    if (!response || !response.ok) {
+      throw lastError || new Error('All Yahoo Finance endpoints failed');
     }
     
     const data = await response.json();

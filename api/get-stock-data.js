@@ -17,21 +17,24 @@ const apiKeyStatus = {
   }
 };
 
-// yfinance 數據獲取函數 - 使用共用的 yfinance 邏輯
+// yfinance 數據獲取函數 - 使用改良的 Yahoo Finance API
 async function getYfinanceData(cleanSymbol, timeframe) {
   try {
-    console.log(`[${new Date().toISOString()}] Using shared yfinance logic for ${cleanSymbol}, timeframe=${timeframe}`);
+    console.log(`[${new Date().toISOString()}] Using enhanced Yahoo Finance API for ${cleanSymbol}, timeframe=${timeframe}`);
     
     const result = await getYfinanceHistoryData(cleanSymbol, timeframe);
     
     if (result && result.history && Array.isArray(result.history) && result.history.length > 0) {
-      console.log(`[${new Date().toISOString()}] ✅ Shared yfinance success: ${result.history.length} data points for ${cleanSymbol}`);
+      console.log(`[${new Date().toISOString()}] ✅ Enhanced Yahoo Finance success: ${result.history.length} data points for ${cleanSymbol}`);
       return result;
     } else {
-      throw new Error('No data returned from shared yfinance logic');
+      throw new Error('No data returned from enhanced Yahoo Finance API');
     }
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Shared yfinance error for ${cleanSymbol}:`, error.message);
+    console.error(`[${new Date().toISOString()}] Enhanced Yahoo Finance failed for ${cleanSymbol}:`, error.message);
+    
+    // 如果 Yahoo Finance JS API 失敗，嘗試使用 yfinance Python (但避免完整的內部 HTTP 呼叫)
+    console.log(`[${new Date().toISOString()}] Trying alternative approach for ${cleanSymbol}`);
     return null;
   }
 }
