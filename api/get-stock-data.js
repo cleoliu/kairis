@@ -21,18 +21,19 @@ async function getYfinanceData(cleanSymbol, timeframe) {
   try {
     console.log(`[${new Date().toISOString()}] Using Yahoo Finance official API for ${cleanSymbol}, timeframe=${timeframe}`);
     
-    // 設定時間範圍和間隔
-    let range, interval;
+    // 🔧 設定明確的時間範圍 - 確保取得最新資料
+    let apiUrl;
     if (timeframe === '5M') {
-      range = '5d';    // 5天的5分線資料
-      interval = '5m';
+      // 5分線：最近5天
+      const now = Math.floor(Date.now() / 1000);
+      const fiveDaysAgo = now - (5 * 24 * 60 * 60);
+      apiUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?period1=${fiveDaysAgo}&period2=${now}&interval=5m&includePrePost=true&includeAdjustedClose=true`;
     } else {
-      range = '2mo';   // 🚀 優化：2個月資料計算 MACD (進一步減少傳輸量)
-      interval = '1d';
+      // 日線：最近2個月 (60天)
+      const now = Math.floor(Date.now() / 1000);
+      const twoMonthsAgo = now - (60 * 24 * 60 * 60); // 60天確保有足夠交易日
+      apiUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?period1=${twoMonthsAgo}&period2=${now}&interval=1d&includePrePost=true&includeAdjustedClose=true`;
     }
-    
-    // 使用 Yahoo Finance 官方 API 端點
-    const apiUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?range=${range}&interval=${interval}&includePrePost=true&includeAdjustedClose=true`;
     
     console.log(`[${new Date().toISOString()}] Fetching from Yahoo Finance: ${apiUrl}`);
     

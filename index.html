@@ -1316,12 +1316,12 @@ const App = {
             
             console.log('Final 5min chart data length:', chartData.length);
         } else {
-            // 日線圖顯示最近30天，但MACD計算使用更多數據
-            chartData = history.slice(0, 30).reverse();
-            // MACD 計算使用最多100天的數據以確保準確性
+            // 🔧 修正：取最後30天資料 (最新的資料)
+            chartData = history.slice(-30); // 取最後30天，不需要reverse
+            // 🔧 MACD 計算使用最多100天的數據以確保準確性
             const macdDataLength = Math.min(100, history.length);
             if (macdDataLength >= 26) {
-                macdData = history.slice(0, macdDataLength).reverse();
+                macdData = history.slice(-macdDataLength); // 取最後100天，已是正確順序
             } else {
                 console.warn(`Not enough daily data for MACD (${macdDataLength}/26), disabling MACD chart`);
                 macdData = null;
@@ -1528,10 +1528,13 @@ const App = {
         const ctx = macdCtx.getContext('2d');
         const macdCalculation = this.calculateMACDHistory(macdData);
         
-        // 檢查數據是否有效
-        console.log('MACD Calculation Data:', macdCalculation);
-        console.log('MACD Source Data Length:', macdData.length);
-        console.log('Histogram values:', macdCalculation.histogram.slice(-10)); // 顯示最後 10 個值
+        // 🔧 詳細檢查數據
+        console.log('=== MACD 偵錯資訊 ===');
+        console.log('原始資料長度:', macdData.length);
+        console.log('原始資料樣本:', macdData.slice(0, 3).map(d => ({ date: d.date, close: d.close })));
+        console.log('MACD 計算結果:', macdCalculation);
+        console.log('非零柱狀圖值:', macdCalculation.histogram.filter(v => v !== 0).length);
+        console.log('最後10個柱狀圖值:', macdCalculation.histogram.slice(-10));
         
         // 只顯示最近 30 天的 MACD 數據（與 K 線圖對應）
         const displayLength = timeUnit === 'week' ? macdData.length : Math.min(30, macdData.length);
@@ -1872,7 +1875,8 @@ const App = {
         return {
             macdLine: resultMacd,
             signalLine: resultSignal,
-            histogram: resultHistogram
+            histogram: resultHistogram,
+            dates: chartData.map(d => d.date) // 🔧 添加日期陣列
         };
     },
 
