@@ -4,16 +4,13 @@ This provides unlimited, free historical stock data without API limits
 """
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-import sys
-import os
 
 # 嘗試導入 yfinance，如果失敗則返回錯誤
 try:
     import yfinance as yf
-    import pandas as pd
     YFINANCE_AVAILABLE = True
 except ImportError as e:
     YFINANCE_AVAILABLE = False
@@ -73,22 +70,43 @@ class handler(BaseHTTPRequestHandler):
             # 轉換數據格式
             history_data = []
             for date_index, row in hist_data.iterrows():
-                # 處理日期格式
-                if timeframe == '5M':
-                    # 5分線保持完整的時間戳
-                    date_str = date_index.isoformat()
-                else:
-                    # 日線只保留日期部分
-                    date_str = date_index.strftime('%Y-%m-%d')
-                
-                history_data.append({
-                    'date': date_str,
-                    'open': float(row['Open']) if not pd.isna(row['Open']) else 0,
-                    'high': float(row['High']) if not pd.isna(row['High']) else 0,
-                    'low': float(row['Low']) if not pd.isna(row['Low']) else 0,
-                    'close': float(row['Close']) if not pd.isna(row['Close']) else 0,
-                    'volume': int(row['Volume']) if not pd.isna(row['Volume']) else 0
-                })
+                try:
+                    # 處理日期格式
+                    if timeframe == '5M':
+                        # 5分線保持完整的時間戳
+                        date_str = date_index.isoformat()
+                    else:
+                        # 日線只保留日期部分
+                        date_str = date_index.strftime('%Y-%m-%d')
+                    
+                    # 安全地轉換數值，處理 NaN
+                    def safe_float(val, default=0.0):
+                        try:
+                            if str(val).lower() in ['nan', 'none', '']:
+                                return default
+                            return float(val)
+                        except (ValueError, TypeError):
+                            return default
+                    
+                    def safe_int(val, default=0):
+                        try:
+                            if str(val).lower() in ['nan', 'none', '']:
+                                return default
+                            return int(float(val))
+                        except (ValueError, TypeError):
+                            return default
+                    
+                    history_data.append({
+                        'date': date_str,
+                        'open': safe_float(row['Open']),
+                        'high': safe_float(row['High']),
+                        'low': safe_float(row['Low']),
+                        'close': safe_float(row['Close']),
+                        'volume': safe_int(row['Volume'])
+                    })
+                except Exception as row_error:
+                    print(f"Error processing row: {row_error}")
+                    continue
             
             # 對於日線數據，確保按日期排序（最新的在前）
             if timeframe != '5M':
