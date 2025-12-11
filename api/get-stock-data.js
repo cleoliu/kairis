@@ -27,7 +27,7 @@ async function getYfinanceData(cleanSymbol, timeframe) {
       range = '5d';    // 5天的5分線資料
       interval = '5m';
     } else {
-      range = '2y';    // 2年的日線資料 (足夠計算 MACD)
+      range = '2mo';   // 🚀 優化：2個月資料計算 MACD (進一步減少傳輸量)
       interval = '1d';
     }
     
@@ -695,14 +695,18 @@ async function handleGetStockData(request, response) {
         }
       }
       
-      // 快取即時報價資料
+      // 🚀 改善快取策略 - 延長快取時間，減少 API 呼叫
       if (quoteData) {
         try {
-          await kv.set(quoteCacheKey, quoteData, { ex: 60 }); // 快取 1 分鐘
-          console.log('Quote data cached for', symbol);
+          // 市場時間內快取30秒，市場關閉時快取10分鐘
+          const now = new Date();
+          const isMarketOpen = (now.getUTCHours() >= 13 && now.getUTCHours() <= 21); // 美股開市時間 (UTC)
+          const cacheTime = isMarketOpen ? 30 : 600; // 30秒 或 10分鐘
+          
+          await kv.set(quoteCacheKey, quoteData, { ex: cacheTime });
+          console.log(`Quote data cached for ${symbol} (${cacheTime}s)`);
         } catch (kvError) {
           console.error('KV Cache write error (quote):', kvError);
-          // Continue without caching if KV fails
         }
       }
     }

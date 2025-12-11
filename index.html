@@ -513,12 +513,29 @@ const App = {
     async fetchStockData(symbol, forceRefresh = false, timeframe = null) {
         const cacheKey = timeframe === '5M' ? `${symbol}_5M` : symbol;
         
+        // 🚀 檢查快取，如果有資料就立即返回 (樂觀更新)
         if (this.state.stockDataCache[cacheKey] && !this.state.stockDataCache[cacheKey].error && !forceRefresh) {
             console.log(`Using cached data for ${symbol}${timeframe ? ` (${timeframe})` : ''}`);
+            
+            // 背景更新：如果資料超過2分鐘，在背景重新載入
+            const cacheAge = Date.now() - (this.state.stockDataCache[cacheKey]._fetchTime || 0);
+            if (cacheAge > 120000) { // 2分鐘
+                console.log(`Background refresh for ${symbol}`);
+                this.fetchStockData(symbol, true, timeframe).then(() => {
+                    this.render(); // 靜默更新 UI
+                }).catch(console.error);
+            }
+            
             return this.state.stockDataCache[cacheKey];
         }
         
-        this.state.stockDataCache[cacheKey] = { isLoading: true };
+        // 🚀 顯示載入狀態但保留舊資料 (避免閃爍)
+        const oldData = this.state.stockDataCache[cacheKey];
+        this.state.stockDataCache[cacheKey] = { 
+            ...oldData, 
+            isLoading: true,
+            _fetchTime: Date.now()
+        };
 
         try {
             const url = timeframe ? `/api/get-stock-data?symbol=${symbol}&timeframe=${timeframe}` : `/api/get-stock-data?symbol=${symbol}`;
