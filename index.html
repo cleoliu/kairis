@@ -1230,7 +1230,16 @@ const App = {
     render7DayPriceVisual(symbol) {
         const history = this.state.stockDataCache[symbol].history;
         if (!history || history.length === 0) return '';
-        const last7Days = history.slice(0, 7);
+        
+        // 🔧 修正：取最近7天的資料 (從今天往前推)
+        const last7Days = history.slice(-7).reverse(); // 取最後7天並反轉為最新在前
+        
+        console.log('近七日價格區間資料:', {
+            total_days: history.length,
+            first_date: history[0]?.date,
+            last_date: history[history.length - 1]?.date,
+            selected_7_days: last7Days.map(d => ({ date: d.date, close: d.close }))
+        });
         const allLows = last7Days.map(d => d.low);
         const allHighs = last7Days.map(d => d.high);
         const minPrice = Math.min(...allLows);
@@ -1874,24 +1883,38 @@ const App = {
         const ema12 = calculateEMA(orderedCloses, 12);
         const ema26 = calculateEMA(orderedCloses, 26);
         
-        // 計算 MACD 線
-        const macdLine = new Array(orderedCloses.length).fill(0);
+        // 🔧 計算 MACD 線 - 確保有更多有效值
+        const macdLine = new Array(orderedCloses.length).fill(null);
+        console.log('EMA 計算結果:', {
+            ema12_valid_from: ema12.findIndex(val => val !== undefined),
+            ema26_valid_from: ema26.findIndex(val => val !== undefined),
+            ema12_sample: ema12.slice(10, 15),
+            ema26_sample: ema26.slice(20, 27)
+        });
+        
         for (let i = 25; i < orderedCloses.length; i++) { // 從第26個數據點開始
             if (ema12[i] !== undefined && ema26[i] !== undefined) {
                 macdLine[i] = ema12[i] - ema26[i];
             }
         }
         
-        // 獲取有效的 MACD 值來計算 Signal 線
+        // 🔧 獲取有效的 MACD 值來計算 Signal 線
         const validMacdValues = [];
         for (let i = 25; i < orderedCloses.length; i++) {
-            if (macdLine[i] !== 0) {
+            if (macdLine[i] !== null && macdLine[i] !== undefined) {
                 validMacdValues.push(macdLine[i]);
             }
         }
         
+        console.log('MACD 值統計:', {
+            total_length: macdLine.length,
+            valid_macd_count: validMacdValues.length,
+            first_valid_index: macdLine.findIndex(val => val !== null),
+            sample_macd: validMacdValues.slice(0, 5)
+        });
+        
         // 🔧 修正 DEA (Signal) 線計算 - MACD 線的9日EMA
-        const signalLine = new Array(orderedCloses.length).fill(0);
+        const signalLine = new Array(orderedCloses.length).fill(null);
         
         if (validMacdValues.length >= 9) {
             console.log('計算 DEA，有效 MACD 值數量:', validMacdValues.length);
@@ -1902,7 +1925,7 @@ const App = {
             // 將 EMA 結果映射回原始位置
             let validIndex = 0;
             for (let i = 25; i < orderedCloses.length; i++) {
-                if (macdLine[i] !== 0) {
+                if (macdLine[i] !== null && macdLine[i] !== undefined) {
                     // 從第9個有效 MACD 值開始有 Signal 值
                     if (validIndex >= 8 && macdEMA[validIndex] !== undefined) {
                         signalLine[i] = macdEMA[validIndex];
@@ -1916,13 +1939,13 @@ const App = {
             console.warn('MACD 值不足9個，無法計算 DEA:', validMacdValues.length);
         }
         
-        // 計算 Histogram
-        const histogram = new Array(orderedCloses.length).fill(0);
+        // 🔧 計算 Histogram (DIF - DEA)
+        const histogram = new Array(orderedCloses.length).fill(null);
         for (let i = 0; i < orderedCloses.length; i++) {
-            if (macdLine[i] !== 0 && signalLine[i] !== 0) {
+            if (macdLine[i] !== null && signalLine[i] !== null) {
                 histogram[i] = macdLine[i] - signalLine[i];
-            } else if (macdLine[i] !== 0) {
-                // 如果沒有 Signal 線，至少顯示 MACD 線的值
+            } else if (macdLine[i] !== null) {
+                // 如果沒有 DEA 線，顯示 DIF 值
                 histogram[i] = macdLine[i];
             }
         }
@@ -1949,10 +1972,10 @@ const App = {
         }
         
         return {
-            macdLine: resultMacd,
-            signalLine: resultSignal,
-            histogram: resultHistogram,
-            dates: chartData.map(d => d.date) // 🔧 添加日期陣列
+            macdLine: resultMacd.map(v => v === null ? 0 : v), // 🔧 將 null 轉為 0 供圖表顯示
+            signalLine: resultSignal.map(v => v === null ? 0 : v),
+            histogram: resultHistogram.map(v => v === null ? 0 : v),
+            dates: chartData.map(d => d.date)
         };
     },
 
@@ -2116,8 +2139,9 @@ const App = {
         const avg = (arr) => sum(arr) / arr.length;
         const ma = (period) => closes.length >= period ? avg(closes.slice(-period)) : (closes.length > 0 ? avg(closes) : stockData.price || 0);
         
-        const high30 = history.length >= 30 ? Math.max(...history.slice(0, 30).map(d => d.high)) : (history.length > 0 ? Math.max(...history.map(d => d.high)) : stockData.high || stockData.price || 0);
-        const low30 = history.length >= 30 ? Math.min(...history.slice(0, 30).map(d => d.low)) : (history.length > 0 ? Math.min(...history.map(d => d.low)) : stockData.low || stockData.price || 0);
+        // 🔧 修正：30日高低價應該取最近30天
+        const high30 = history.length >= 30 ? Math.max(...history.slice(-30).map(d => d.high)) : (history.length > 0 ? Math.max(...history.map(d => d.high)) : stockData.high || stockData.price || 0);
+        const low30 = history.length >= 30 ? Math.min(...history.slice(-30).map(d => d.low)) : (history.length > 0 ? Math.min(...history.map(d => d.low)) : stockData.low || stockData.price || 0);
         const avgVol5 = volumes.length >= 5 ? avg(volumes.slice(-5)) : (volumes.length > 0 ? avg(volumes) : 0);
 
         let gains = 0, losses = 0;
