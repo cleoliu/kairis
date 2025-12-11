@@ -573,33 +573,27 @@ async function handleGetStockData(request, response) {
         
         // 使用 yfinance 作為備用方案獲取即時報價
         try {
-          const yfinanceQuoteUrl = `/api/yfinance-history?symbol=${finnhubSymbol}&timeframe=1D`;
-          const yfinanceResponse = await fetch(yfinanceQuoteUrl);
-          
-          if (yfinanceResponse.ok) {
-            const yfinanceData = await yfinanceResponse.json();
+          // 使用共用的 yfinance 邏輯代替內部 HTTP 呼叫
+          const yfinanceData = await getYfinanceHistoryData(finnhubSymbol, 'D');
             
-            if (yfinanceData.history && yfinanceData.history.length > 0) {
-              const latestData = yfinanceData.history[yfinanceData.history.length - 1];
-              const previousData = yfinanceData.history[yfinanceData.history.length - 2] || latestData;
-              
-              const change = latestData.close - previousData.close;
-              const changePercent = previousData.close !== 0 ? (change / previousData.close) * 100 : 0;
-              
-              console.log(`Successfully used yfinance for quote data: ${symbol}`);
-              quoteData = {
-                name: yfinanceData.name || symbol,
-                price: latestData.close,
-                change: change,
-                changePercent: changePercent,
-                high: latestData.high,
-                low: latestData.low,
-              };
-            } else {
-              throw new Error('yfinance returned empty data');
-            }
+          if (yfinanceData.history && yfinanceData.history.length > 0) {
+            const latestData = yfinanceData.history[yfinanceData.history.length - 1];
+            const previousData = yfinanceData.history[yfinanceData.history.length - 2] || latestData;
+            
+            const change = latestData.close - previousData.close;
+            const changePercent = previousData.close !== 0 ? (change / previousData.close) * 100 : 0;
+            
+            console.log(`Successfully used yfinance for quote data: ${symbol}`);
+            quoteData = {
+              name: yfinanceData.name || symbol,
+              price: latestData.close,
+              change: change,
+              changePercent: changePercent,
+              high: latestData.high,
+              low: latestData.low,
+            };
           } else {
-            throw new Error(`yfinance API error: ${yfinanceResponse.status}`);
+            throw new Error('yfinance returned empty data');
           }
         } catch (yfinanceError) {
           console.error(`Both Finnhub and yfinance failed for ${symbol}:`, yfinanceError.message);
