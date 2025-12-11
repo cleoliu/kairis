@@ -1,7 +1,1 @@
-{
-  "functions": {
-    "api/yfinance-history.py": {
-      "runtime": "python@3.12"
-    }
-  }
-}
+{}
