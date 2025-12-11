@@ -23,9 +23,9 @@
     -->
     <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.1.1/dist/chartjs-chart-financial.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1/dist/chartjs-chart-financial.min.js"></script>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
@@ -1204,11 +1204,28 @@ const App = {
     },
 
     async renderAdvancedChart(symbol) {
+        console.log('開始渲染圖表，symbol:', symbol, 'timeframe:', this.state.chartTimeframe);
+        
+        // 清理現有圖表
         if (this.state.advancedChartInstance) {
             this.state.advancedChartInstance.destroy();
+            this.state.advancedChartInstance = null;
         }
         if (this.state.macdChartInstance) {
             this.state.macdChartInstance.destroy();
+            this.state.macdChartInstance = null;
+        }
+        
+        // 檢查 Canvas 元素是否存在
+        const chartCanvas = document.getElementById('advanced-chart');
+        const macdCanvas = document.getElementById('macd-chart');
+        
+        if (!chartCanvas || !macdCanvas) {
+            console.error('Chart canvas elements not found:', {
+                chartCanvas: !!chartCanvas,
+                macdCanvas: !!macdCanvas
+            });
+            return;
         }
         
         // 根據時間框架獲取相應的數據
@@ -1219,8 +1236,14 @@ const App = {
             stockData = this.state.stockDataCache[symbol];
         }
         
-        if (stockData.error) {
-            console.error('無法獲取股票數據:', stockData.error);
+        if (!stockData || stockData.error) {
+            console.error('無法獲取股票數據:', stockData?.error || '數據不存在');
+            const ctx = chartCanvas.getContext('2d');
+            ctx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('數據載入失敗', chartCanvas.width / 2, chartCanvas.height / 2);
             return;
         }
         
@@ -1255,33 +1278,65 @@ const App = {
             timeUnit = 'day';
         }
 
-        // 繪製 K 線圖
-        const ctx = document.getElementById('advanced-chart').getContext('2d');
+        // 驗證圖表數據
+        if (!chartData || chartData.length === 0) {
+            console.error('Chart data is empty or invalid');
+            return;
+        }
         
-        const data = chartData.map(d => ({
-            x: new Date(d.date).getTime(),
-            o: d.open,
-            h: d.high,
-            l: d.low,
-            c: d.close
-        }));
+        console.log('Chart data prepared:', {
+            length: chartData.length,
+            timeframe: this.state.chartTimeframe,
+            sampleData: chartData.slice(0, 3)
+        });
 
-        this.state.advancedChartInstance = new Chart(ctx, {
+        // 繪製 K 線圖
+        const ctx = chartCanvas.getContext('2d');
+        
+        const data = chartData.map(d => {
+            const timestamp = new Date(d.date).getTime();
+            if (isNaN(timestamp)) {
+                console.warn('Invalid date found:', d.date);
+                return null;
+            }
+            return {
+                x: timestamp,
+                o: parseFloat(d.open) || 0,
+                h: parseFloat(d.high) || 0,
+                l: parseFloat(d.low) || 0,
+                c: parseFloat(d.close) || 0
+            };
+        }).filter(d => d !== null);
+        
+        console.log('Processed K-line data:', {
+            length: data.length,
+            sample: data.slice(0, 2)
+        });
+
+        try {
+            console.log('Creating K-line chart...');
+            this.state.advancedChartInstance = new Chart(ctx, {
             type: 'candlestick',
             data: {
                 datasets: [{
                     label: `${symbol} K-Line`,
                     data: data,
+                    borderColor: '#94a3b8',
                     color: {
                         up: '#22c55e',
                         down: '#ef4444',
                         unchanged: '#94a3b8'
-                    }
+                    },
+                    borderWidth: 1
                 }]
             },
             options: {
                 maintainAspectRatio: false,
                 responsive: true,
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
                 scales: {
                     x: {
                         type: 'time',
@@ -1289,37 +1344,76 @@ const App = {
                             unit: timeUnit,
                             displayFormats: {
                                 minute: 'HH:mm',
-                                day: 'MM/dd',
+                                day: 'MM/dd', 
                                 week: 'MM/dd'
                             }
                         },
-                        grid: { color: 'rgba(71, 85, 105, 0.5)' },
+                        grid: { 
+                            color: 'rgba(71, 85, 105, 0.3)',
+                            display: true
+                        },
                         ticks: { 
                             color: '#94a3b8',
-                            maxTicksLimit: 6
+                            maxTicksLimit: 8
                         }
                     },
                     y: { 
-                        grid: { color: 'rgba(71, 85, 105, 0.5)' },
-                        ticks: { color: '#94a3b8' }
+                        grid: { 
+                            color: 'rgba(71, 85, 105, 0.3)',
+                            display: true
+                        },
+                        ticks: { 
+                            color: '#94a3b8',
+                            callback: function(value) {
+                                return '$' + value.toFixed(2);
+                            }
+                        }
                     }
                 },
                 plugins: {
-                    legend: { display: false },
+                    legend: { 
+                        display: false 
+                    },
                     tooltip: {
+                        backgroundColor: 'rgba(30, 41, 59, 0.95)',
+                        titleColor: '#e2e8f0',
+                        bodyColor: '#e2e8f0',
+                        borderColor: '#475569',
+                        borderWidth: 1,
                         callbacks: {
+                            title: function(context) {
+                                const date = new Date(context[0].parsed.x);
+                                return date.toLocaleDateString('zh-TW');
+                            },
                             label: function(context) {
                                 const d = context.raw;
-                                return ` 開: ${d.o.toFixed(2)} 高: ${d.h.toFixed(2)} 低: ${d.l.toFixed(2)} 收: ${d.c.toFixed(2)}`;
+                                return [
+                                    `開盤: $${d.o?.toFixed(2) || 'N/A'}`,
+                                    `最高: $${d.h?.toFixed(2) || 'N/A'}`,
+                                    `最低: $${d.l?.toFixed(2) || 'N/A'}`,
+                                    `收盤: $${d.c?.toFixed(2) || 'N/A'}`
+                                ];
                             }
                         }
                     }
                 }
-            }
-        });
-
-        // 繪製 MACD 圖表，使用更多的歷史數據進行計算
-        this.renderMACDChart(symbol, macdData, timeUnit);
+            });
+            
+            console.log('K-line chart created successfully');
+            
+            // 繪製 MACD 圖表，使用更多的歷史數據進行計算
+            this.renderMACDChart(symbol, macdData, timeUnit);
+            
+        } catch (error) {
+            console.error('Error creating K-line chart:', error);
+            
+            // 顯示錯誤信息
+            ctx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+            ctx.fillStyle = '#ef4444';
+            ctx.font = '14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('K線圖創建失敗: ' + error.message, chartCanvas.width / 2, chartCanvas.height / 2);
+        }
     },
 
     renderMACDChart(symbol, macdData, timeUnit) {
@@ -1362,62 +1456,80 @@ const App = {
 
         console.log(`Found ${nonZeroCount} non-zero MACD values out of ${displayData.histogram.length} display points`);
 
-        this.state.macdChartInstance = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [
-                    {
-                        label: 'MACD 柱狀圖',
-                        data: displayData.histogram,
-                        backgroundColor: displayData.histogram.map(value => 
-                            value >= 0 ? 'rgba(34, 197, 94, 0.6)' : 'rgba(239, 68, 68, 0.6)'
-                        ),
-                        borderColor: displayData.histogram.map(value => 
-                            value >= 0 ? '#16a34a' : '#dc2626'
-                        ),
-                        borderWidth: 1,
-                        barThickness: 'flex',
-                        maxBarThickness: 8,
-                        order: 3 // 柱狀圖在最底層
-                    },
-                    {
-                        label: 'DIF',
-                        data: displayData.macdLine,
-                        type: 'line',
-                        borderColor: '#3b82f6', // 藍色
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        borderWidth: 2,
-                        fill: false,
-                        tension: 0.1,
-                        pointRadius: 0,
-                        pointHoverRadius: 4,
-                        order: 1
-                    },
-                    {
-                        label: 'DEA',
-                        data: displayData.signalLine,
-                        type: 'line',
-                        borderColor: '#f59e0b', // 橙色
-                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                        borderWidth: 2,
-                        fill: false,
-                        tension: 0.1,
-                        pointRadius: 0,
-                        pointHoverRadius: 4,
-                        order: 2
-                    }
-                ]
-            },
-            options: {
-                maintainAspectRatio: false,
-                responsive: true,
-                interaction: {
-                    intersect: false,
-                    mode: 'index'
+        // 準備時間軸數據
+        const timeAxisData = labels.map((timestamp, index) => ({
+            x: timestamp,
+            y: displayData.histogram[index] || 0
+        }));
+        
+        const difLineData = labels.map((timestamp, index) => ({
+            x: timestamp,
+            y: displayData.macdLine[index] || 0
+        }));
+        
+        const deaLineData = labels.map((timestamp, index) => ({
+            x: timestamp,
+            y: displayData.signalLine[index] || 0
+        }));
+
+        try {
+            console.log('Creating MACD chart...');
+            this.state.macdChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    datasets: [
+                        {
+                            label: 'MACD 柱狀圖',
+                            data: timeAxisData,
+                            backgroundColor: displayData.histogram.map(value => 
+                                value >= 0 ? 'rgba(34, 197, 94, 0.6)' : 'rgba(239, 68, 68, 0.6)'
+                            ),
+                            borderColor: displayData.histogram.map(value => 
+                                value >= 0 ? '#16a34a' : '#dc2626'
+                            ),
+                            borderWidth: 1,
+                            borderSkipped: false,
+                            barThickness: 'flex',
+                            maxBarThickness: 8,
+                            order: 3
+                        },
+                        {
+                            label: 'DIF',
+                            data: difLineData,
+                            type: 'line',
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2,
+                            fill: false,
+                            tension: 0.1,
+                            pointRadius: 0,
+                            pointHoverRadius: 4,
+                            order: 1
+                        },
+                        {
+                            label: 'DEA',
+                            data: deaLineData,
+                            type: 'line',
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                            borderWidth: 2,
+                            fill: false,
+                            tension: 0.1,
+                            pointRadius: 0,
+                            pointHoverRadius: 4,
+                            order: 2
+                        }
+                    ]
                 },
-                scales: {
-                    x: {
+                options: {
+                    maintainAspectRatio: false,
+                    responsive: true,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    scales: {
+                        x: {
                         type: 'time',
                         time: { 
                             unit: timeUnit,
@@ -1427,15 +1539,26 @@ const App = {
                                 week: 'MM/dd'
                             }
                         },
-                        grid: { color: 'rgba(71, 85, 105, 0.5)' },
+                        grid: { 
+                            color: 'rgba(71, 85, 105, 0.3)',
+                            display: true
+                        },
                         ticks: { 
                             color: '#94a3b8',
-                            maxTicksLimit: 6
+                            maxTicksLimit: 8
                         }
                     },
                     y: {
-                        grid: { color: 'rgba(71, 85, 105, 0.5)' },
-                        ticks: { color: '#94a3b8' },
+                        grid: { 
+                            color: 'rgba(71, 85, 105, 0.3)',
+                            display: true
+                        },
+                        ticks: { 
+                            color: '#94a3b8',
+                            callback: function(value) {
+                                return value.toFixed(4);
+                            }
+                        },
                         beginAtZero: true
                     }
                 },
@@ -1445,54 +1568,58 @@ const App = {
                         position: 'bottom',
                         labels: {
                             color: '#94a3b8',
-                            font: { size: 8 },
-                            usePointStyle: false
+                            font: { size: 10 },
+                            usePointStyle: true,
+                            pointStyle: 'line',
+                            padding: 15
                         }
                     },
                     tooltip: {
+                        backgroundColor: 'rgba(30, 41, 59, 0.95)',
+                        titleColor: '#e2e8f0',
+                        bodyColor: '#e2e8f0',
+                        borderColor: '#475569',
+                        borderWidth: 1,
                         callbacks: {
+                            title: function(context) {
+                                const date = new Date(context[0].parsed.x);
+                                return date.toLocaleDateString('zh-TW');
+                            },
                             label: function(context) {
                                 const datasetLabel = context.dataset.label;
                                 const value = context.parsed.y;
                                 
                                 if (datasetLabel === 'MACD 柱狀圖') {
-                                    const color = value >= 0 ? '多頭' : '空頭';
-                                    return `${datasetLabel}: ${value.toFixed(4)} (${color})`;
-                                } else if (datasetLabel === 'DIF') {
-                                    return `${datasetLabel}: ${value.toFixed(4)}`;
-                                } else if (datasetLabel === 'DEA') {
+                                    const trend = value >= 0 ? '多頭' : '空頭';
+                                    return `${datasetLabel}: ${value.toFixed(4)} (${trend})`;
+                                } else {
                                     return `${datasetLabel}: ${value.toFixed(4)}`;
                                 }
-                                return `${datasetLabel}: ${value.toFixed(4)}`;
                             },
                             afterLabel: function(context) {
-                                // 顯示完整的 MACD 資訊
-                                if (context.datasetIndex === 0) { // 只在柱狀圖的 tooltip 中顯示摘要
-                                    const index = context.dataIndex;
-                                    const chart = context.chart;
-                                    const datasets = chart.data.datasets;
-                                    
-                                    let dif = 0, dea = 0;
-                                    if (datasets[1] && datasets[1].data[index] !== undefined) {
-                                        dif = datasets[1].data[index];
-                                    }
-                                    if (datasets[2] && datasets[2].data[index] !== undefined) {
-                                        dea = datasets[2].data[index];
-                                    }
-                                    
+                                if (context.datasetIndex === 0) {
                                     const histogram = context.parsed.y;
-                                    
-                                    return [
-                                        `趨勢: ${histogram >= 0 ? '多頭強化' : '空頭強化'}`
-                                    ];
+                                    return `趨勢強度: ${Math.abs(histogram).toFixed(4)}`;
                                 }
                                 return null;
                             }
                         }
                     }
                 }
-            }
-        });
+            });
+            
+            console.log('MACD chart created successfully');
+            
+        } catch (error) {
+            console.error('Error creating MACD chart:', error);
+            
+            // 顯示錯誤信息
+            ctx.clearRect(0, 0, macdCtx.width, macdCtx.height);
+            ctx.fillStyle = '#ef4444';
+            ctx.font = '14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('MACD圖創建失敗: ' + error.message, macdCtx.width / 2, macdCtx.height / 2);
+        }
     },
 
     calculateMACDHistory(chartData) {
