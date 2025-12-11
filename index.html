@@ -1718,7 +1718,15 @@ const App = {
         }));
 
         try {
-            console.log('Creating MACD chart...');
+            console.log('Creating MACD chart with the following data:', {
+                validPoints: validDataPoints.length,
+                timeRange: validDataPoints.length > 0 ? {
+                    start: new Date(validDataPoints[0].timestamp).toLocaleDateString(),
+                    end: new Date(validDataPoints[validDataPoints.length - 1].timestamp).toLocaleDateString()
+                } : null,
+                sampleHistogram: validDataPoints.slice(0, 5).map(p => p.histogram.toFixed(4)),
+                timeUnit: timeUnit
+            });
             this.state.macdChartInstance = new Chart(ctx, {
                 type: 'bar',
                 data: {
@@ -1784,6 +1792,9 @@ const App = {
                                     week: 'MM/dd'
                                 }
                             },
+                            // 🔧 設定明確的時間範圍，確保與 K 線圖一致
+                            min: validDataPoints.length > 0 ? validDataPoints[0].timestamp : undefined,
+                            max: validDataPoints.length > 0 ? validDataPoints[validDataPoints.length - 1].timestamp : undefined,
                             grid: { 
                                 color: 'rgba(71, 85, 105, 0.3)',
                                 display: true
