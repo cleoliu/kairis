@@ -541,12 +541,12 @@ const App = {
             const url = timeframe ? `/api/get-stock-data?symbol=${symbol}&timeframe=${timeframe}` : `/api/get-stock-data?symbol=${symbol}`;
             console.log(`[${new Date().toISOString()}] Fetching data from API for ${symbol}${timeframe ? ` (${timeframe})` : ''}`);
             
-            // 🚀 加入 fetch 超時機制 - 增加到 20 秒
+            // 🚀 加入 fetch 超時機制 - 調整到 45 秒 (股票API較慢)
             const controller = new AbortController();
             const timeoutId = setTimeout(() => {
-                console.warn(`⏰ ${symbol} API 請求超過 20 秒，中止請求`);
+                console.warn(`⏰ ${symbol} API 請求超過 45 秒，中止請求`);
                 controller.abort();
-            }, 20000); // 20秒超時
+            }, 45000); // 45秒超時
             
             const response = await fetch(url, {
                 signal: controller.signal,
@@ -577,7 +577,7 @@ const App = {
             
             // 🚀 更詳細的錯誤處理
             if (error.name === 'AbortError') {
-                errorMessage = `${symbol} API 回應過慢 (>20秒)`;
+                errorMessage = `${symbol} API 回應過慢 (>45秒)`;
                 console.warn(`🐌 ${symbol} 載入時間過長，已自動跳過`);
             } else if (error.message.includes('Failed to fetch')) {
                 errorMessage = '網路連線失敗';
@@ -612,7 +612,7 @@ const App = {
         
         // 🚀 優化：批次載入 + 超時機制 + 即時更新
         const BATCH_SIZE = 3; // 每批3個
-        const TIMEOUT_PER_STOCK = 25000; // 每股25秒超時 (配合 fetch 20秒)
+        const TIMEOUT_PER_STOCK = 50000; // 每股50秒超時 (配合 fetch 45秒)
         let completed = 0;
         
         // 分批處理
