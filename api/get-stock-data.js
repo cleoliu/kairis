@@ -592,8 +592,32 @@ async function handleGetStockData(request, response) {
       
       const [profileResponse, finnhubQuoteResponse] = await Promise.all([fetch(profileUrl), fetch(finnhubQuoteUrl)]);
       if (!profileResponse.ok || !finnhubQuoteResponse.ok) {
-        console.warn(`Finnhub API request failed for ${symbol}, status: ${profileResponse.status}, ${finnhubQuoteResponse.status}`);
-        return response.status(404).json({ error: `找不到 Finnhub 即時報價資料: ${symbol}` });
+        console.error(`Finnhub API request failed for ${symbol}:`, {
+          symbol: symbol,
+          finnhubSymbol: finnhubSymbol,
+          profileStatus: profileResponse.status,
+          quoteStatus: finnhubQuoteResponse.status,
+          profileUrl: profileUrl,
+          quoteUrl: finnhubQuoteUrl,
+          apiKeyExists: !!finnhubApiKey,
+          apiKeyLength: finnhubApiKey?.length
+        });
+        
+        // 嘗試獲取錯誤響應內容
+        try {
+          const profileError = !profileResponse.ok ? await profileResponse.text() : null;
+          const quoteError = !finnhubQuoteResponse.ok ? await finnhubQuoteResponse.text() : null;
+          console.error('Finnhub error responses:', { profileError, quoteError });
+        } catch (e) {
+          console.error('Failed to read error responses:', e);
+        }
+        
+        return response.status(404).json({ 
+          error: `找不到 Finnhub 即時報價資料: ${symbol}`,
+          details: `Profile API: ${profileResponse.status}, Quote API: ${finnhubQuoteResponse.status}`,
+          symbol: symbol,
+          finnhubSymbol: finnhubSymbol
+        });
       }
       const profileJson = await profileResponse.json();
       const quoteJson = await finnhubQuoteResponse.json();
