@@ -706,46 +706,11 @@ async function handleGetStockData(request, response) {
           historyData = result.data;
           cacheTime = result.cacheTime;
         } catch (error) {
-          console.error(`[${new Date().toISOString()}] Yahoo Finance API failed for ${cleanSymbol}:`, error);
-          console.log(`[${new Date().toISOString()}] Trying yfinance-history API as fallback for ${cleanSymbol}`);
-          
-          // 如果 Yahoo Finance API 失敗，使用 Alpha Vantage 作為備用
-          try {
-            console.log(`[${new Date().toISOString()}] Trying Alpha Vantage as fallback for ${cleanSymbol}`);
-            
-            const avUrl = timeframe === '5M' 
-              ? `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${cleanSymbol}&interval=5min&outputsize=full&apikey=demo`
-              : `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${cleanSymbol}&outputsize=full&apikey=demo`;
-            
-            const avResponse = await fetch(avUrl);
-            const avData = await avResponse.json();
-            
-            if (avData['Time Series (Daily)'] || avData['Time Series (5min)']) {
-              const timeSeries = avData['Time Series (Daily)'] || avData['Time Series (5min)'];
-              historyData = Object.entries(timeSeries)
-                .map(([date, values]) => ({
-                  date: timeframe === '5M' ? date : date,
-                  open: parseFloat(values['1. open']),
-                  high: parseFloat(values['2. high']),
-                  low: parseFloat(values['3. low']),
-                  close: parseFloat(values['4. close']),
-                  volume: parseInt(values['5. volume']) || 0
-                }))
-                .reverse() // 最新的在後
-                .slice(0, 2000); // 限制最多2000筆資料
-              
-              cacheTime = timeframe === '5M' ? 3600 : 86400 * 7;
-              console.log(`[${new Date().toISOString()}] ✅ Alpha Vantage fallback success: ${historyData.length} points for ${cleanSymbol}`);
-            } else {
-              throw new Error('Alpha Vantage returned invalid data structure');
-            }
-          } catch (fallbackError) {
-            console.error(`[${new Date().toISOString()}] All data sources failed for ${cleanSymbol}:`, fallbackError);
-            return response.status(404).json({ 
-              error: `無法獲取 ${cleanSymbol} 的歷史資料`,
-              details: `Yahoo Finance: ${error.message}, Alpha Vantage: ${fallbackError.message}`
-            });
-          }
+          console.error(`[${new Date().toISOString()}] Yahoo Finance failed for ${cleanSymbol}:`, error);
+          return response.status(404).json({ 
+            error: `無法從 Yahoo Finance 獲取 ${cleanSymbol} 的歷史資料`,
+            details: error.message
+          });
         } finally {
           // 無論成功或失敗都要清理 pending request
           pendingRequests.delete(requestKey);
