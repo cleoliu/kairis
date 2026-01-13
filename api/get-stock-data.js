@@ -9,79 +9,18 @@ const pendingRequests = new Map();
 
 // 追蹤 API key 狀態
 const apiKeyStatus = {
-  polygon: { working: true, lastError: null, lastUsed: null }
+  polygon: { working: true, lastError: null, lastUsed: null },
+  yfinance: { working: true, lastError: null, lastUsed: null },
+  twelveData: {
+    primary: { working: true, lastError: null, lastUsed: null },
+    backup: { working: true, lastError: null, lastUsed: null }
+  }
 };
-
-// Polygon.io Rate Limit 控制
-// 免費版限制：5 requests/minute
-const polygonRateLimit = {
-  requestTimestamps: [], // 記錄最近5次請求的時間戳
-  maxRequests: 5,
-  windowMs: 60000, // 1分鐘
-  minInterval: 12000, // 每次請求間除12秒 (5 req/min = 12s interval)
-  isRateLimited: false,
-  rateLimitResetTime: 0
-};
-
-// 檢查是否可以發起 Polygon.io 請求
-function canMakePolygonRequest() {
-  const now = Date.now();
-  
-  // 檢查是否處於 rate limit 狀態
-  if (polygonRateLimit.isRateLimited) {
-    if (now > polygonRateLimit.rateLimitResetTime) {
-      polygonRateLimit.isRateLimited = false;
-      console.log(`[${new Date().toISOString()}] Polygon.io rate limit expired`);
-    } else {
-      const waitTime = Math.ceil((polygonRateLimit.rateLimitResetTime - now) / 1000);
-      console.warn(`[${new Date().toISOString()}] Polygon.io is rate limited, wait ${waitTime}s`);
-      return { canMake: false, waitTime };
-    }
-  }
-  
-  // 清理超過時間窗口的記錄
-  polygonRateLimit.requestTimestamps = polygonRateLimit.requestTimestamps.filter(
-    timestamp => now - timestamp < polygonRateLimit.windowMs
-  );
-  
-  // 檢查是否超過請求數限制
-  if (polygonRateLimit.requestTimestamps.length >= polygonRateLimit.maxRequests) {
-    const oldestRequest = polygonRateLimit.requestTimestamps[0];
-    const waitTime = Math.ceil((oldestRequest + polygonRateLimit.windowMs - now) / 1000);
-    console.warn(`[${new Date().toISOString()}] Polygon.io rate limit: ${polygonRateLimit.requestTimestamps.length}/${polygonRateLimit.maxRequests} requests in window, wait ${waitTime}s`);
-    return { canMake: false, waitTime };
-  }
-  
-  // 檢查最小間隔
-  if (polygonRateLimit.requestTimestamps.length > 0) {
-    const lastRequest = polygonRateLimit.requestTimestamps[polygonRateLimit.requestTimestamps.length - 1];
-    const timeSinceLastRequest = now - lastRequest;
-    if (timeSinceLastRequest < polygonRateLimit.minInterval) {
-      const waitTime = Math.ceil((polygonRateLimit.minInterval - timeSinceLastRequest) / 1000);
-      console.log(`[${new Date().toISOString()}] Polygon.io min interval not met, wait ${waitTime}s`);
-      return { canMake: false, waitTime };
-    }
-  }
-  
-  return { canMake: true, waitTime: 0 };
-}
-
-// 記錄 Polygon.io 請求
-function recordPolygonRequest() {
-  polygonRateLimit.requestTimestamps.push(Date.now());
-  console.log(`[${new Date().toISOString()}] Polygon.io requests in window: ${polygonRateLimit.requestTimestamps.length}/${polygonRateLimit.maxRequests}`);
-}
 
 // Polygon.io 數據獲取函數 - 主要數據源（速度快）
 async function getPolygonData(cleanSymbol, timeframe, apiKey) {
   try {
     console.log(`[${new Date().toISOString()}] Using Polygon.io API for ${cleanSymbol}, timeframe=${timeframe}`);
-    
-    // 檢查 rate limit
-    const rateLimitCheck = canMakePolygonRequest();
-    if (!rateLimitCheck.canMake) {
-      throw new Error(`Rate limited: wait ${rateLimitCheck.waitTime}s`);
-    }
     
     let apiUrl;
     if (timeframe === '5M') {
@@ -102,22 +41,12 @@ async function getPolygonData(cleanSymbol, timeframe, apiKey) {
     
     console.log(`[${new Date().toISOString()}] Fetching from Polygon.io: ${apiUrl}`);
     
-    // 記錄請求
-    recordPolygonRequest();
-    
     const response = await fetch(apiUrl, {
       method: 'GET',
       headers: {
         'Accept': 'application/json'
       }
     });
-    
-    // 處理 HTTP 429 錯誤
-    if (response.status === 429) {
-      polygonRateLimit.isRateLimited = true;
-      polygonRateLimit.rateLimitResetTime = Date.now() + 60000; // 1分鐘後重試
-      throw new Error('HTTP 429: Rate limit exceeded');
-    }
     
     if (!response.ok) {
       throw new Error(`Polygon.io API HTTP ${response.status}: ${response.statusText}`);
@@ -185,28 +114,12 @@ async function getPolygonGroupedDaily(apiKey, date = null) {
     
     console.log(`[${new Date().toISOString()}] Fetching grouped daily data from Polygon.io for ${targetDate}`);
     
-    // 檢查 rate limit
-    const rateLimitCheck = canMakePolygonRequest();
-    if (!rateLimitCheck.canMake) {
-      throw new Error(`Rate limited: wait ${rateLimitCheck.waitTime}s`);
-    }
-    
-    // 記錄請求
-    recordPolygonRequest();
-    
     const response = await fetch(apiUrl, {
       method: 'GET',
       headers: {
         'Accept': 'application/json'
       }
     });
-    
-    // 處理 HTTP 429 錯誤
-    if (response.status === 429) {
-      polygonRateLimit.isRateLimited = true;
-      polygonRateLimit.rateLimitResetTime = Date.now() + 60000;
-      throw new Error('HTTP 429: Rate limit exceeded');
-    }
     
     if (!response.ok) {
       throw new Error(`Polygon.io Grouped API HTTP ${response.status}: ${response.statusText}`);
@@ -237,11 +150,187 @@ async function getPolygonGroupedDaily(apiKey, date = null) {
     
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Polygon.io Grouped API failed:`, error.message);
-    throw error;
+    return null;
   }
 }
 
+// yfinance 數據獲取函數 - 備用數據源
+async function getYfinanceData(cleanSymbol, timeframe) {
+  try {
+    console.log(`[${new Date().toISOString()}] Using Yahoo Finance official API for ${cleanSymbol}, timeframe=${timeframe}`);
+    
+    // 🔧 設定明確的時間範圍 - 確保取得最新資料
+    let apiUrl;
+    if (timeframe === '5M') {
+      // 5分線：最近5天
+      const now = Math.floor(Date.now() / 1000);
+      const fiveDaysAgo = now - (5 * 24 * 60 * 60);
+      apiUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?period1=${fiveDaysAgo}&period2=${now}&interval=5m&includePrePost=true&includeAdjustedClose=true`;
+    } else {
+      // 日線：最近3個月 (90天) - 確保有足夠數據計算完整的MACD  
+      const now = Math.floor(Date.now() / 1000);
+      const threeMonthsAgo = now - (90 * 24 * 60 * 60); // 90天確保有充足的MACD計算數據
+      apiUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?period1=${threeMonthsAgo}&period2=${now}&interval=1d&includePrePost=true&includeAdjustedClose=true`;
+    }
+    
+    console.log(`[${new Date().toISOString()}] Fetching from Yahoo Finance: ${apiUrl}`);
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://finance.yahoo.com/',
+        'Origin': 'https://finance.yahoo.com'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Yahoo Finance API HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    // 檢查回應結構
+    if (!data.chart || !data.chart.result || !data.chart.result[0]) {
+      console.error('Invalid Yahoo Finance response:', data);
+      throw new Error('Invalid response structure from Yahoo Finance API');
+    }
+    
+    const result = data.chart.result[0];
+    
+    // 檢查是否有錯誤
+    if (data.chart.error) {
+      throw new Error(`Yahoo Finance API error: ${data.chart.error.description}`);
+    }
+    
+    const timestamps = result.timestamp;
+    const quotes = result.indicators?.quote?.[0];
+    const adjClose = result.indicators?.adjclose?.[0]?.adjclose;
+    
+    if (!timestamps || !quotes || timestamps.length === 0) {
+      console.error('No data in Yahoo Finance response');
+      throw new Error('No historical data found');
+    }
+    
+    // 轉換資料格式
+    const history = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      const timestamp = timestamps[i];
+      const open = quotes.open?.[i];
+      const high = quotes.high?.[i];
+      const low = quotes.low?.[i];
+      const close = adjClose?.[i] || quotes.close?.[i]; // 使用調整後收盤價
+      const volume = quotes.volume?.[i];
+      
+      // 跳過無效資料
+      if (close === null || close === undefined || isNaN(close)) {
+        continue;
+      }
+      
+      const date = new Date(timestamp * 1000);
+      
+      // 🔧 修正日期格式 - 使用 UTC 避免時區問題
+      const dateString = timeframe === '5M' 
+        ? date.toISOString() 
+        : `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+      
+      history.push({
+        date: dateString,
+        open: open || close,
+        high: high || close,
+        low: low || close,
+        close: close,
+        volume: volume || 0
+      });
+    }
+    
+    // 按日期排序 (最新在後)
+    if (timeframe !== '5M') {
+      history.sort((a, b) => new Date(a.date) - new Date(b.date));
+    }
+    
+    console.log(`[${new Date().toISOString()}] ✅ Yahoo Finance success: ${history.length} data points for ${cleanSymbol}`);
+    
+    // 獲取股票名稱
+    const stockName = result.meta?.longName || result.meta?.shortName || cleanSymbol;
+    
+    return {
+      symbol: cleanSymbol,
+      name: stockName,
+      history: history,
+      source: 'yahoo-finance',
+      timeframe: timeframe,
+      total_points: history.length
+    };
+    
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Yahoo Finance API failed for ${cleanSymbol}:`, error.message);
+    return null;
+  }
+}
 
+// Rate limit 控制
+// Twelve Data 免費版限制：8 requests/minute (每分鐘8次請求)
+// 為了安全起見，我們設置最小間隔為8秒，確保不超過限制
+const rateLimitControl = {
+  twelveData: {
+    primary: {
+      lastRequest: 0,
+      requestCount: 0,
+      resetTime: 0,
+      minInterval: 8000, // 最小間隔 8 秒 (7.5 requests/minute, 安全起見)
+      isRateLimited: false,
+      rateLimitResetTime: 0
+    },
+    backup: {
+      lastRequest: 0,
+      requestCount: 0,
+      resetTime: 0,
+      minInterval: 8000, // 最小間隔 8 秒
+      isRateLimited: false,
+      rateLimitResetTime: 0
+    }
+  }
+};
+
+// 輔助函數：檢查是否可以發起請求
+function canMakeRequest(keyType) {
+  const now = Date.now();
+  const control = rateLimitControl.twelveData[keyType];
+  
+  // 如果處於 rate limit 狀態，檢查是否已過期
+  if (control.isRateLimited && now > control.rateLimitResetTime) {
+    control.isRateLimited = false;
+    console.log(`[${new Date().toISOString()}] Rate limit expired for Twelve Data ${keyType} key`);
+  }
+  
+  // 如果仍在 rate limit 中，不能發起請求
+  if (control.isRateLimited) {
+    const remainingTime = Math.ceil((control.rateLimitResetTime - now) / 1000);
+    console.warn(`[${new Date().toISOString()}] Twelve Data ${keyType} key is rate limited for ${remainingTime} seconds`);
+    return false;
+  }
+  
+  // 檢查最小間隔
+  const timeSinceLastRequest = now - control.lastRequest;
+  if (timeSinceLastRequest < control.minInterval) {
+    const waitTime = control.minInterval - timeSinceLastRequest;
+    console.log(`[${new Date().toISOString()}] Need to wait ${waitTime}ms before next Twelve Data ${keyType} request`);
+    return false;
+  }
+  
+  return true;
+}
+
+// 輔助函數：更新請求記錄
+function recordRequest(keyType) {
+  const now = Date.now();
+  const control = rateLimitControl.twelveData[keyType];
+  control.lastRequest = now;
+  control.requestCount++;
+}
 
 export default async function handler(request, response) {
   const { action } = request.query;
@@ -251,8 +340,6 @@ export default async function handler(request, response) {
       return handleGetNews(request, response);
     } else if (action === 'api_status') {
       return handleApiStatus(request, response);
-    } else if (action === 'grouped_daily') {
-      return handleGroupedDaily(request, response);
     }
     return handleGetStockData(request, response);
   } else if (request.method === 'POST') {
@@ -263,112 +350,280 @@ export default async function handler(request, response) {
   }
 }
 
-// 獲取歷史數據的獨立函數 - 只使用 Polygon.io
-async function fetchHistoricalData(cleanSymbol, timeframe, polygonApiKey) {
+// 獲取歷史數據的獨立函數 - 優先使用 Polygon.io，備用 yfinance
+async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey, polygonApiKey) {
   console.log(`[${new Date().toISOString()}] Fetching historical data for ${cleanSymbol}`);
   
-  const cacheTime = timeframe === '5M' ? 3600 : 86400 * 7;
+  let historyData = null;
+  let cacheTime = timeframe === '5M' ? 3600 : 86400 * 7;
   
-  if (!polygonApiKey) {
-    throw new Error('POLYGON_API_KEY not configured');
-  }
-  
-  const polygonResult = await getPolygonData(cleanSymbol, timeframe, polygonApiKey);
-  
-  if (polygonResult?.history?.length > 0) {
-    console.log(`[${new Date().toISOString()}] ✅ Polygon.io success: ${polygonResult.history.length} data points for ${cleanSymbol}`);
-    return { data: polygonResult.history, cacheTime };
-  }
-  
-  throw new Error(`無法從 Polygon.io 獲取 ${cleanSymbol} 的歷史資料`);
-}
-
-// 處理 Grouped Daily 請求
-async function handleGroupedDaily(request, response) {
-  try {
-    const { symbols } = request.query;
-    
-    if (!symbols) {
-      return response.status(400).json({ error: '必須提供 symbols 參數' });
-    }
-    
-    const polygonApiKey = process.env.POLYGON_API_KEY;
-    if (!polygonApiKey) {
-      return response.status(500).json({ error: 'POLYGON_API_KEY 未設定' });
-    }
-    
-    const symbolList = symbols.split(',').map(s => s.trim().replace(/\.US$/, ''));
-    console.log(`[${new Date().toISOString()}] Grouped daily request for ${symbolList.length} symbols`);
-    
-    // 獲取當前日期字符串
-    const today = new Date().toISOString().split('T')[0];
-    const groupedCacheKey = `grouped_daily_${today}`;
-    
-    // 嘗試從快取獲取
-    let stockMap;
+  // 優先使用 Polygon.io
+  if (polygonApiKey) {
     try {
-      const cached = await kv.get(groupedCacheKey);
-      if (cached) {
-        console.log(`[${new Date().toISOString()}] Using cached grouped daily data`);
-        stockMap = new Map(Object.entries(cached));
-      }
-    } catch (kvError) {
-      console.error('KV Cache read error:', kvError);
-    }
-    
-    // 如果快取中沒有，從 API 獲取
-    if (!stockMap) {
-      stockMap = await getPolygonGroupedDaily(polygonApiKey);
+      const polygonResult = await getPolygonData(cleanSymbol, timeframe, polygonApiKey);
       
-      // 快取到收盤時間
-      if (stockMap) {
-        try {
-          const now = new Date();
-          const marketCloseUTC = new Date(now);
-          marketCloseUTC.setUTCHours(21, 0, 0, 0);
-          
-          const cacheTime = now < marketCloseUTC 
-            ? Math.floor((marketCloseUTC - now) / 1000)
-            : 86400 * 7;
-          
-          // 轉換 Map 為 Object 以便快取
-          const cacheData = Object.fromEntries(stockMap);
-          await kv.set(groupedCacheKey, cacheData, { ex: cacheTime });
-          console.log(`[${new Date().toISOString()}] Grouped daily data cached for ${cacheTime}s`);
-        } catch (kvError) {
-          console.error('KV Cache write error:', kvError);
-        }
+      if (polygonResult && polygonResult.history && Array.isArray(polygonResult.history) && polygonResult.history.length > 0) {
+        historyData = polygonResult.history;
+        console.log(`[${new Date().toISOString()}] ✅ Polygon.io success: ${historyData.length} data points for ${cleanSymbol}`);
+        return { data: historyData, cacheTime };
       }
+    } catch (error) {
+      console.warn(`[${new Date().toISOString()}] Polygon.io failed for ${cleanSymbol}, trying fallback:`, error.message);
     }
-    
-    if (!stockMap) {
-      return response.status(500).json({ error: '無法獲取 grouped daily 數據' });
-    }
-    
-    // 策備用戶請求的股票數據
-    const result = {};
-    symbolList.forEach(symbol => {
-      const data = stockMap.get(symbol);
-      if (data) {
-        result[symbol] = data;
-      }
-    });
-    
-    response.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate');
-    return response.status(200).json({
-      success: true,
-      count: Object.keys(result).length,
-      requested: symbolList.length,
-      data: result
-    });
-    
-  } catch (error) {
-    console.error('handleGroupedDaily Error:', error);
-    return response.status(500).json({ 
-      error: '獲取 grouped daily 數據時發生錯誤',
-      details: error.message 
-    });
   }
+  
+  // 備用：使用 yfinance
+  try {
+    const yfinanceResult = await getYfinanceData(cleanSymbol, timeframe);
+    
+    if (yfinanceResult && yfinanceResult.history && Array.isArray(yfinanceResult.history) && yfinanceResult.history.length > 0) {
+      historyData = yfinanceResult.history;
+      
+      // 更新 yfinance 成功狀態
+      apiKeyStatus.yfinance.working = true;
+      apiKeyStatus.yfinance.lastError = null;
+      apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
+      
+      console.log(`[${new Date().toISOString()}] ✅ yfinance fallback success: ${historyData.length} data points for ${cleanSymbol}`);
+      return { data: historyData, cacheTime };
+    } else {
+      throw new Error('yfinance returned empty data');
+    }
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] ❌ All data sources failed for ${cleanSymbol}:`, error.message);
+    
+    // 更新 yfinance 錯誤狀態
+    apiKeyStatus.yfinance.working = false;
+    apiKeyStatus.yfinance.lastError = error.message;
+    apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
+    
+    throw new Error(`無法獲取 ${cleanSymbol} 的歷史資料: ${error.message}`);
+  }
+
+  // 移除所有其他資料來源 (Twelve Data)
+  if (false) {
+    console.log(`[${new Date().toISOString()}] Trying Twelve Data API for ${cleanSymbol}`);
+    
+    const twelveDataKeys = [
+      { key: process.env.TWELVE_DATA_API_KEY, type: 'primary' },
+      { key: process.env.TWELVE_DATA_BACKUP_API_KEY, type: 'backup' }
+    ].filter(item => item.key);
+
+    for (const { key: apiKey, type: keyType } of twelveDataKeys) {
+      if (historyData) break;
+
+      try {
+        // 檢查是否可以發起請求（rate limit 控制）
+        if (canMakeRequest(keyType)) {
+          // 等待必要的間隔時間
+          const control = rateLimitControl.twelveData[keyType];
+          const waitTime = control.isRateLimited 
+            ? Math.max(0, control.rateLimitResetTime - Date.now())
+            : Math.max(0, (control.lastRequest + control.minInterval) - Date.now());
+
+          if (waitTime > 0) {
+            if (waitTime <= 10000) { // 最多等待10秒
+              console.log(`[${new Date().toISOString()}] Waiting ${waitTime}ms for Twelve Data ${keyType} key rate limit`);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+              
+              // 重新檢查是否可以發請求
+              if (!canMakeRequest(keyType)) {
+                console.warn(`[${new Date().toISOString()}] Still rate limited after waiting, skipping Twelve Data ${keyType} key`);
+                continue;
+              }
+            } else {
+              console.warn(`[${new Date().toISOString()}] Rate limit wait time too long (${waitTime}ms), skipping Twelve Data ${keyType} key`);
+              continue;
+            }
+          }
+        } else {
+          console.log(`[${new Date().toISOString()}] Skipping rate limited Twelve Data ${keyType} key, trying next`);
+          continue;
+        }
+
+        // 記錄請求
+        recordRequest(keyType);
+        
+        const twelveDataUrl = `https://api.twelvedata.com/time_series?symbol=${cleanSymbol}&interval=1day&outputsize=5000&apikey=${apiKey}`;
+        const twelveResponse = await fetch(twelveDataUrl);
+        
+        if (twelveResponse.ok) {
+          const twelveJson = await twelveResponse.json();
+          
+          // 檢查是否有錯誤響應（API 配額用完等）
+          if (twelveJson.code || twelveJson.status === 'error') {
+            // 檢查是否是 rate limit 錯誤
+            if (twelveJson.code === 429 || twelveJson.message.toLowerCase().includes('rate limit') || 
+                twelveJson.message.toLowerCase().includes('quota') || twelveJson.message.toLowerCase().includes('limit exceeded')) {
+              console.warn(`[${new Date().toISOString()}] Rate limit detected for Twelve Data ${keyType} key`);
+              
+              // 設置 rate limit 狀態
+              const control = rateLimitControl.twelveData[keyType];
+              control.isRateLimited = true;
+              control.rateLimitResetTime = Date.now() + (60 * 60 * 1000);
+              
+              apiKeyStatus.twelveData[keyType].lastError = `Rate Limited: ${twelveJson.message}`;
+              continue; // 嘗試下一個 API key
+            } else {
+              console.warn(`[${new Date().toISOString()}] Twelve Data ${keyType} key API error:`, twelveJson.message || twelveJson.code);
+              apiKeyStatus.twelveData[keyType].lastError = `API Error: ${twelveJson.message || twelveJson.code}`;
+              continue; // 嘗試下一個 API key
+            }
+          }
+
+          if (twelveJson.values && Array.isArray(twelveJson.values) && twelveJson.values.length > 0) {
+            // 轉換 Twelve Data 格式到標準格式
+            historyData = twelveJson.values.map(item => ({
+              date: item.datetime,
+              open: parseFloat(item.open),
+              high: parseFloat(item.high),
+              low: parseFloat(item.low),
+              close: parseFloat(item.close),
+              volume: parseInt(item.volume) || 0
+            }));
+            
+            cacheTime = 86400 * 7; // 7天快取
+            console.log(`[${new Date().toISOString()}] Successfully used Twelve Data ${keyType} key:`, historyData.length, 'points');
+            
+            // 更新成功狀態
+            apiKeyStatus.twelveData[keyType].working = true;
+            apiKeyStatus.twelveData[keyType].lastError = null;
+            
+            // 記錄響應頭信息
+            console.log(`[${new Date().toISOString()}] Twelve Data ${keyType} response headers:`, {
+              'x-ratelimit-remaining': twelveResponse.headers.get('x-ratelimit-remaining'),
+              'x-ratelimit-reset': twelveResponse.headers.get('x-ratelimit-reset')
+            });
+            break; // 成功獲取數據，退出循環
+          } else {
+            console.warn(`[${new Date().toISOString()}] Twelve Data ${keyType} key returned no data for ${cleanSymbol}`);
+            apiKeyStatus.twelveData[keyType].lastError = 'No data returned';
+          }
+        } else {
+          // 檢查是否是 rate limit HTTP 錯誤
+          if (twelveResponse.status === 429) {
+            console.warn(`[${new Date().toISOString()}] HTTP 429 Rate limit detected for Twelve Data ${keyType} key`);
+            
+            // 設置 rate limit 狀態
+            const control = rateLimitControl.twelveData[keyType];
+            control.isRateLimited = true;
+            
+            const resetHeader = twelveResponse.headers.get('x-ratelimit-reset');
+            if (resetHeader) {
+              control.rateLimitResetTime = parseInt(resetHeader) * 1000; // 轉換為毫秒
+            } else {
+              control.rateLimitResetTime = Date.now() + (60 * 60 * 1000);
+            }
+            
+            apiKeyStatus.twelveData[keyType].lastError = `HTTP 429: Rate Limited`;
+            continue;
+          } else {
+            console.warn(`[${new Date().toISOString()}] Twelve Data ${keyType} key HTTP error:`, twelveResponse.status, twelveResponse.statusText);
+            apiKeyStatus.twelveData[keyType].lastError = `HTTP ${twelveResponse.status}: ${twelveResponse.statusText}`;
+          }
+        }
+      } catch (error) {
+        console.error(`[${new Date().toISOString()}] Twelve Data ${keyType} key error:`, error.message);
+        apiKeyStatus.twelveData[keyType].lastError = error.message;
+      }
+    }
+  }
+
+  // 不使用 Finnhub 作為備用，只使用 yfinance
+  if (false && !historyData) {
+    if (timeframe === '5M') {
+      // 5分線數據 - 使用 Finnhub 作為最後備用
+      cacheTime = 3600; // 快取 1 小時
+      
+      console.log(`[${new Date().toISOString()}] Trying Finnhub as final fallback for 5min data: ${cleanSymbol}`);
+      
+      // 使用Finnhub的分時數據作為最後備用選項
+      const intradayUrl = `https://finnhub.io/api/v1/stock/candle?symbol=${cleanSymbol}&resolution=5&from=${Math.floor(Date.now()/1000) - (5 * 86400)}&to=${Math.floor(Date.now()/1000)}&token=${finnhubApiKey}`;
+      
+      try {
+        const intradayResponse = await fetch(intradayUrl);
+        if (intradayResponse.ok) {
+          const intradayJson = await intradayResponse.json();
+          
+          if (intradayJson.s === 'ok' && intradayJson.c?.length > 0) {
+            console.log(`[${new Date().toISOString()}] Using Finnhub intraday data as final fallback:`, intradayJson.c.length, 'points');
+            
+            historyData = intradayJson.c.map((close, i) => ({
+              date: new Date(intradayJson.t[i] * 1000).toISOString(),
+              open: intradayJson.o[i],
+              high: intradayJson.h[i],
+              low: intradayJson.l[i],
+              close: close,
+              volume: intradayJson.v[i]
+            })).slice(-78); // 最多78個5分鐘K線
+          } else {
+            console.warn(`[${new Date().toISOString()}] No intraday data available for ${cleanSymbol}`);
+            throw new Error(`找不到 ${cleanSymbol} 的5分線資料，可能此股票不支援分時數據`);
+          }
+        } else {
+          console.warn(`[${new Date().toISOString()}] Finnhub intraday API request failed for ${cleanSymbol}, status: ${intradayResponse.status}`);
+          throw new Error(`從 Finnhub 獲取分時資料失敗: ${cleanSymbol}`);
+        }
+      } catch (error) {
+        console.error(`[${new Date().toISOString()}] Finnhub intraday fetch error:`, error);
+        throw new Error(`獲取5分線資料時發生錯誤: ${cleanSymbol}`);
+      }
+    } else {
+      // 日線數據 - 使用 Finnhub 作為最後備用
+      cacheTime = 86400 * 7; // 快取 7 天
+      
+      console.log(`[${new Date().toISOString()}] Trying Finnhub as final fallback for daily data: ${cleanSymbol}`);
+      
+      try {
+        const finnhubHistoryUrl = `https://finnhub.io/api/v1/stock/candle?symbol=${cleanSymbol}&resolution=D&from=${Math.floor(Date.now()/1000) - (730 * 24 * 60 * 60)}&to=${Math.floor(Date.now()/1000)}&token=${finnhubApiKey}`;
+        const finnhubResponse = await fetch(finnhubHistoryUrl);
+        
+        if (finnhubResponse.ok) {
+          const finnhubJson = await finnhubResponse.json();
+          
+          console.log(`[${new Date().toISOString()}] Finnhub response for ${cleanSymbol}:`, {
+            status: finnhubJson.s,
+            dataLength: finnhubJson.c?.length,
+            hasClose: !!finnhubJson.c,
+            hasOpen: !!finnhubJson.o,
+            hasHigh: !!finnhubJson.h,
+            hasLow: !!finnhubJson.l,
+            hasVolume: !!finnhubJson.v,
+            hasTime: !!finnhubJson.t
+          });
+          
+          if (finnhubJson.s === 'ok' && finnhubJson.c?.length > 0) {
+            historyData = finnhubJson.c.map((close, i) => ({
+              date: new Date(finnhubJson.t[i] * 1000).toISOString().split('T')[0],
+              open: finnhubJson.o[i],
+              high: finnhubJson.h[i],
+              low: finnhubJson.l[i],
+              close: close,
+              volume: finnhubJson.v[i]
+            })).reverse(); // Finnhub返回的數據是倒序的
+            
+            console.log(`[${new Date().toISOString()}] Successfully using Finnhub daily data as final fallback for ${cleanSymbol}:`, historyData.length, 'points');
+          } else {
+            console.warn(`[${new Date().toISOString()}] Finnhub returned invalid data for ${cleanSymbol}:`, {
+              status: finnhubJson.s,
+              message: finnhubJson.s !== 'ok' ? 'API returned error status' : 'No data points available'
+            });
+          }
+        } else {
+          console.warn(`[${new Date().toISOString()}] Finnhub HTTP error for ${cleanSymbol}:`, finnhubResponse.status, finnhubResponse.statusText);
+        }
+      } catch (error) {
+        console.error(`[${new Date().toISOString()}] Finnhub daily fetch error for ${cleanSymbol}:`, error);
+      }
+      
+      if (!historyData) {
+        console.warn(`No historical data found for ${cleanSymbol}, will create placeholder data`);
+        throw new Error(`找不到 ${cleanSymbol} 的歷史資料`);
+      }
+    }
+  }
+
+  return { data: historyData, cacheTime };
 }
 
 // 處理 API 狀態查詢
@@ -378,12 +633,32 @@ async function handleApiStatus(_, response) {
       timestamp: new Date().toISOString(),
       environment: {
         POLYGON_API_KEY: !!process.env.POLYGON_API_KEY,
-        YFINANCE_AVAILABLE: true,
+        YFINANCE_AVAILABLE: true, // yfinance 不需要 API key
         FINNHUB_API_KEY: !!process.env.FINNHUB_API_KEY,
+        TWELVE_DATA_API_KEY: !!process.env.TWELVE_DATA_API_KEY,
+        TWELVE_DATA_API_KEY_BACKUP: !!process.env.TWELVE_DATA_API_KEY_BACKUP,
         GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
         KV_CONFIGURED: !!(process.env.KV_URL && process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN)
       },
       apiStatus: apiKeyStatus,
+      rateLimitStatus: {
+        twelveData: {
+          primary: {
+            ...rateLimitControl.twelveData.primary,
+            canMakeRequest: canMakeRequest('primary'),
+            nextAvailableTime: rateLimitControl.twelveData.primary.isRateLimited 
+              ? new Date(rateLimitControl.twelveData.primary.rateLimitResetTime).toISOString()
+              : new Date(rateLimitControl.twelveData.primary.lastRequest + rateLimitControl.twelveData.primary.minInterval).toISOString()
+          },
+          backup: {
+            ...rateLimitControl.twelveData.backup,
+            canMakeRequest: canMakeRequest('backup'),
+            nextAvailableTime: rateLimitControl.twelveData.backup.isRateLimited 
+              ? new Date(rateLimitControl.twelveData.backup.rateLimitResetTime).toISOString()
+              : new Date(rateLimitControl.twelveData.backup.lastRequest + rateLimitControl.twelveData.backup.minInterval).toISOString()
+          }
+        }
+      },
       pendingRequests: pendingRequests.size
     };
 
@@ -415,20 +690,32 @@ async function handleGetStockData(request, response) {
     console.log('Environment check:', {
       POLYGON_API_KEY: !!process.env.POLYGON_API_KEY,
       FINNHUB_API_KEY: !!process.env.FINNHUB_API_KEY,
-      KV_CONFIGURED: !!(process.env.KV_URL && process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN)
+      TWELVE_DATA_API_KEY: !!process.env.TWELVE_DATA_API_KEY,
+      TWELVE_DATA_API_KEY_BACKUP: !!process.env.TWELVE_DATA_API_KEY_BACKUP,
+      KV_URL: !!process.env.KV_URL,
+      KV_REST_API_URL: !!process.env.KV_REST_API_URL,
+      KV_REST_API_TOKEN: !!process.env.KV_REST_API_TOKEN
     });
 
     // Log current API key status
     console.log('Current API Key Status:', JSON.stringify(apiKeyStatus, null, 2));
     
-    // Log Polygon.io rate limit status
-    const polygonCheck = canMakePolygonRequest();
-    console.log('Polygon.io Rate Limit Status:', {
-      canMakeRequest: polygonCheck.canMake,
-      waitTime: polygonCheck.waitTime,
-      requestsInWindow: polygonRateLimit.requestTimestamps.length,
-      maxRequests: polygonRateLimit.maxRequests,
-      isRateLimited: polygonRateLimit.isRateLimited
+    // Log current rate limit status
+    console.log('Current Rate Limit Status:', {
+      twelveData: {
+        primary: {
+          canMakeRequest: canMakeRequest('primary'),
+          isRateLimited: rateLimitControl.twelveData.primary.isRateLimited,
+          requestCount: rateLimitControl.twelveData.primary.requestCount,
+          lastRequest: rateLimitControl.twelveData.primary.lastRequest ? new Date(rateLimitControl.twelveData.primary.lastRequest).toISOString() : null
+        },
+        backup: {
+          canMakeRequest: canMakeRequest('backup'),
+          isRateLimited: rateLimitControl.twelveData.backup.isRateLimited,
+          requestCount: rateLimitControl.twelveData.backup.requestCount,
+          lastRequest: rateLimitControl.twelveData.backup.lastRequest ? new Date(rateLimitControl.twelveData.backup.lastRequest).toISOString() : null
+        }
+      }
     });
 
     const finnhubApiKey = process.env.FINNHUB_API_KEY;
@@ -447,10 +734,9 @@ async function handleGetStockData(request, response) {
     
     const quoteCacheKey = `quote_finnhub_${symbol}`;
     // 歷史數據使用全局共用的快取鍵，包含日期
-    // 優化：日線數據不包含日期，減少不必要的 API 調用
     const historyCacheKey = timeframe === '5M' ? 
       `global_intraday_${symbol}_${today}` : 
-      `global_history_${symbol}`;
+      `global_history_${symbol}_${today}`;
     
     // 檢查是否為週末（美股市場關閉）
     const todayDate = new Date();
@@ -522,25 +808,55 @@ async function handleGetStockData(request, response) {
           if (quoteJson.c && quoteJson.c !== 0) {
             console.log(`Successfully used Finnhub for quote data: ${symbol}`);
             quoteData = {
-              name: profileJson.name || symbol,
-              price: quoteJson.c,
-              change: quoteJson.d,
-              changePercent: quoteJson.dp,
-              high: quoteJson.h,
-              low: quoteJson.l,
+                name: profileJson.name || symbol,
+                price: quoteJson.c,
+                change: quoteJson.d,
+                changePercent: quoteJson.dp,
+                high: quoteJson.h,
+                low: quoteJson.l,
             };
           } else {
-            throw new Error('Invalid Finnhub data - price is 0 or null');
+            console.warn(`Finnhub returned invalid quote data for ${symbol}, trying yfinance fallback`);
+            throw new Error('Invalid Finnhub data');
           }
         } else {
-          throw new Error(`Finnhub API error: ${profileResponse.status}/${finnhubQuoteResponse.status}`);
+          console.warn(`Finnhub API error for ${symbol} (${profileResponse.status}/${finnhubQuoteResponse.status}), trying yfinance fallback`);
+          throw new Error('Finnhub API error');
         }
       } catch (finnhubError) {
-        console.error(`Finnhub failed for ${symbol}:`, finnhubError.message);
-        return response.status(404).json({ 
-          error: `無法獲取 ${symbol} 的即時報價資料`,
-          details: finnhubError.message
-        });
+        console.log(`Finnhub failed for ${symbol}, trying yfinance as fallback:`, finnhubError.message);
+        
+        // 使用 yfinance 作為備用方案獲取即時報價
+        try {
+          // 使用外部 yfinance API 服務
+          const yfinanceData = await getYfinanceData(finnhubSymbol, 'D');
+            
+          if (yfinanceData.history && yfinanceData.history.length > 0) {
+            const latestData = yfinanceData.history[yfinanceData.history.length - 1];
+            const previousData = yfinanceData.history[yfinanceData.history.length - 2] || latestData;
+            
+            const change = latestData.close - previousData.close;
+            const changePercent = previousData.close !== 0 ? (change / previousData.close) * 100 : 0;
+            
+            console.log(`Successfully used yfinance for quote data: ${symbol}`);
+            quoteData = {
+              name: yfinanceData.name || symbol,
+              price: latestData.close,
+              change: change,
+              changePercent: changePercent,
+              high: latestData.high,
+              low: latestData.low,
+            };
+          } else {
+            throw new Error('yfinance returned empty data');
+          }
+        } catch (yfinanceError) {
+          console.error(`Both Finnhub and yfinance failed for ${symbol}:`, yfinanceError.message);
+          return response.status(404).json({ 
+            error: `無法獲取 ${symbol} 的即時報價資料`,
+            details: `Finnhub: ${finnhubError.message}, yfinance: ${yfinanceError.message}`
+          });
+        }
       }
       
       // 🚀 改善快取策略 - 延長快取時間，減少 API 呼叫
@@ -581,7 +897,7 @@ async function handleGetStockData(request, response) {
         console.log(`[${new Date().toISOString()}] Fetching fresh historical data for ${symbol} on trading day ${tradingDay} (requested: ${today})`);
         
         // 創建一個 Promise 來獲取數據，並將其存儲在 pendingRequests 中
-        const fetchPromise = fetchHistoricalData(cleanSymbol, timeframe, polygonApiKey);
+        const fetchPromise = fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey, polygonApiKey);
         pendingRequests.set(requestKey, fetchPromise);
         
         try {
@@ -601,30 +917,13 @@ async function handleGetStockData(request, response) {
       }
 
       // 快取新獲取的歷史數據
-      // 優化：日線數據快取時間延長為收盤前有效
       if (historyData && cacheTime) {
         try {
-          // 日線數據快取到當天收盤後（美東時間16:00 = UTC 21:00）
-          let actualCacheTime = cacheTime;
-          if (timeframe !== '5M') {
-            const now = new Date();
-            const marketCloseUTC = new Date(now);
-            marketCloseUTC.setUTCHours(21, 0, 0, 0); // 美東16:00 = UTC 21:00
-            
-            // 如果還沒到收盤時間，快取到收盤時間
-            if (now < marketCloseUTC) {
-              actualCacheTime = Math.floor((marketCloseUTC - now) / 1000);
-              console.log(`[${new Date().toISOString()}] Optimized cache time until market close: ${actualCacheTime}s`);
-            } else {
-              // 已經收盤，快取7天
-              actualCacheTime = 86400 * 7;
-            }
-          }
-          
-          await kv.set(historyCacheKey, historyData, { ex: actualCacheTime });
-          console.log(`[${new Date().toISOString()}] History data cached for ${symbol} with key: ${historyCacheKey}, expires in ${actualCacheTime} seconds`);
+          await kv.set(historyCacheKey, historyData, { ex: cacheTime });
+          console.log(`[${new Date().toISOString()}] History data cached for ${symbol} with key: ${historyCacheKey}, expires in ${cacheTime} seconds`);
         } catch (kvError) {
           console.error('KV Cache write error (history):', kvError);
+          // Continue without caching if KV fails
         }
       }
     }

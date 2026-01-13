@@ -604,114 +604,47 @@ const App = {
         }
 
         // 過濾掉台股，只處理美股
-        const usSymbols = this.state.watchlist.filter(symbol => !symbol.includes('.TW'));
+        const symbolsToFetch = this.state.watchlist
+            .filter(symbol => !symbol.includes('.TW'))
+            .filter(symbol => !this.state.stockDataCache[symbol] || forceRefresh);
         
-        if (usSymbols.length === 0) {
-            this.state.isLoading = false;
+        console.log(`🚀 開始載入 ${symbolsToFetch.length} 個股票...`);
+        
+        // 🚀 優化：批次載入 + 超時機制 + 即時更新
+        const BATCH_SIZE = 3; // 每批3個
+        const TIMEOUT_PER_STOCK = 50000; // 每股50秒超時 (配合 fetch 45秒)
+        let completed = 0;
+        
+        // 分批處理
+        for (let i = 0; i < symbolsToFetch.length; i += BATCH_SIZE) {
+            const batch = symbolsToFetch.slice(i, i + BATCH_SIZE);
+            console.log(`📦 處理批次 ${Math.floor(i/BATCH_SIZE) + 1}: ${batch.join(', ')}`);
+            
+            // 為每個 API 加上超時機制
+            const batchPromises = batch.map(symbol => 
+                Promise.race([
+                    this.fetchStockData(symbol, forceRefresh),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('timeout')), TIMEOUT_PER_STOCK)
+                    )
+                ]).catch(error => {
+                    console.warn(`⚠️ ${symbol} 載入失敗:`, error.message);
+                    return { symbol, error: '載入超時' };
+                })
+            );
+            
+            // 等待批次完成
+            await Promise.allSettled(batchPromises);
+            completed += batch.length;
+            
+            // 即時更新 UI
+            console.log(`✅ 已完成 ${completed}/${symbolsToFetch.length} 個股票`);
             this.render();
-            return;
-        }
-        
-        console.log(`🚀 使用 Grouped Daily API 載入 ${usSymbols.length} 個股票...`);
-        
-        try {
-            // 🚀 新方法：使用 Grouped Daily API 一次獲取所有股票
-            const symbolsParam = usSymbols.map(s => s.replace(/\.US$/, '')).join(',');
-            const response = await fetch(`/api/get-stock-data?action=grouped_daily&symbols=${symbolsParam}`);
-            
-            if (!response.ok) {
-                throw new Error(`Grouped daily API failed: ${response.status}`);
-            }
-            
-            const result = await response.json();
-            console.log(`✅ Grouped Daily API 返回 ${result.count}/${result.requested} 個股票`);
-            
-            // 更新快取中的當日數據
-            Object.entries(result.data).forEach(([symbol, dayData]) => {
-                const fullSymbol = `${symbol}.US`;
-                
-                // 如果快取中已有該股票數據，更新最新的一天
-                if (this.state.stockDataCache[fullSymbol]) {
-                    const cached = this.state.stockDataCache[fullSymbol];
-                    
-                    // 更新或添加最新一天的數據
-                    if (cached.history && cached.history.length > 0) {
-                        const lastHistoryDate = cached.history[cached.history.length - 1].date;
-                        if (lastHistoryDate === dayData.date) {
-                            // 更新最後一天
-                            cached.history[cached.history.length - 1] = dayData;
-                        } else {
-                            // 添加新的一天
-                            cached.history.push(dayData);
-                        }
-                    }
-                    
-                    // 更新即時報價（使用當日收盤價）
-                    cached.price = dayData.close;
-                    cached.high = dayData.high;
-                    cached.low = dayData.low;
-                    
-                } else if (forceRefresh) {
-                    // 如果是強制刷新且快取中沒有，需要獲取完整歷史數據
-                    // 使用單獨 API 獲取（僅在首次加載或詳情頁需要）
-                    console.log(`⚠️ ${fullSymbol} 需要完整歷史數據，稍後加載`);
-                }
-            });
-            
-            this.render();
-            
-            // 對於沒有完整數據的股票，異步加載（不阻塞 UI）
-            if (forceRefresh) {
-                const needFullData = usSymbols.filter(s => !this.state.stockDataCache[s] || !this.state.stockDataCache[s].history);
-                if (needFullData.length > 0) {
-                    console.log(`📊 異步加載 ${needFullData.length} 個股票的完整歷史數據...`);
-                    this.loadFullHistoryData(needFullData);
-                }
-            }
-            
-        } catch (error) {
-            console.error('Grouped Daily API 失敗，回退到逐個加載:', error);
-            
-            // 回退方案：逐個加載
-            const symbolsToFetch = usSymbols.filter(symbol => !this.state.stockDataCache[symbol] || forceRefresh);
-            const BATCH_SIZE = 3;
-            
-            for (let i = 0; i < symbolsToFetch.length; i += BATCH_SIZE) {
-                const batch = symbolsToFetch.slice(i, i + BATCH_SIZE);
-                await Promise.allSettled(
-                    batch.map(symbol => this.fetchStockData(symbol, forceRefresh).catch(err => {
-                        console.warn(`⚠️ ${symbol} 載入失敗:`, err.message);
-                    }))
-                );
-                this.render();
-            }
         }
 
         this.state.isLoading = false;
         this.render();
         console.log(`🎉 自選列表載入完成！`);
-    },
-
-    // 異步加載完整歷史數據（不阻塞 UI）
-    async loadFullHistoryData(symbols) {
-        const BATCH_SIZE = 3;
-        
-        for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
-            const batch = symbols.slice(i, i + BATCH_SIZE);
-            
-            await Promise.allSettled(
-                batch.map(async symbol => {
-                    try {
-                        await this.fetchStockData(symbol, true);
-                        console.log(`✅ ${symbol} 完整歷史數據已加載`);
-                    } catch (error) {
-                        console.warn(`⚠️ ${symbol} 完整歷史數據加載失敗:`, error.message);
-                    }
-                })
-            );
-            
-            this.render();
-        }
     },
 
     setupEventListeners() {
