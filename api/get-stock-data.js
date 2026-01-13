@@ -9,6 +9,7 @@ const pendingRequests = new Map();
 
 // 追蹤 API key 狀態
 const apiKeyStatus = {
+  polygon: { working: true, lastError: null, lastUsed: null },
   yfinance: { working: true, lastError: null, lastUsed: null },
   twelveData: {
     primary: { working: true, lastError: null, lastUsed: null },
@@ -16,7 +17,144 @@ const apiKeyStatus = {
   }
 };
 
-// yfinance 數據獲取函數 - 使用 Yahoo Finance 官方 API
+// Polygon.io 數據獲取函數 - 主要數據源（速度快）
+async function getPolygonData(cleanSymbol, timeframe, apiKey) {
+  try {
+    console.log(`[${new Date().toISOString()}] Using Polygon.io API for ${cleanSymbol}, timeframe=${timeframe}`);
+    
+    let apiUrl;
+    if (timeframe === '5M') {
+      // 5分線：使用 intraday aggregates
+      const today = new Date();
+      const fiveDaysAgo = new Date(today.getTime() - (5 * 24 * 60 * 60 * 1000));
+      const fromDate = fiveDaysAgo.toISOString().split('T')[0];
+      const toDate = today.toISOString().split('T')[0];
+      apiUrl = `https://api.polygon.io/v2/aggs/ticker/${cleanSymbol}/range/5/minute/${fromDate}/${toDate}?adjusted=true&sort=asc&apiKey=${apiKey}`;
+    } else {
+      // 日線：最近90天
+      const today = new Date();
+      const ninetyDaysAgo = new Date(today.getTime() - (90 * 24 * 60 * 60 * 1000));
+      const fromDate = ninetyDaysAgo.toISOString().split('T')[0];
+      const toDate = today.toISOString().split('T')[0];
+      apiUrl = `https://api.polygon.io/v2/aggs/ticker/${cleanSymbol}/range/1/day/${fromDate}/${toDate}?adjusted=true&sort=asc&apiKey=${apiKey}`;
+    }
+    
+    console.log(`[${new Date().toISOString()}] Fetching from Polygon.io: ${apiUrl}`);
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Polygon.io API HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    // 檢查回應狀態
+    if (data.status !== 'OK' || !data.results || data.results.length === 0) {
+      console.error('Invalid Polygon.io response:', data);
+      throw new Error(data.status === 'ERROR' ? `Polygon.io error: ${data.error}` : 'No data available');
+    }
+    
+    // 轉換資料格式
+    const history = data.results.map(item => {
+      const date = new Date(item.t);
+      const dateString = timeframe === '5M' 
+        ? date.toISOString() 
+        : `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+      
+      return {
+        date: dateString,
+        open: item.o,
+        high: item.h,
+        low: item.l,
+        close: item.c,
+        volume: item.v || 0
+      };
+    });
+    
+    console.log(`[${new Date().toISOString()}] ✅ Polygon.io success: ${history.length} data points for ${cleanSymbol}`);
+    
+    // 更新成功狀態
+    apiKeyStatus.polygon.working = true;
+    apiKeyStatus.polygon.lastError = null;
+    apiKeyStatus.polygon.lastUsed = new Date().toISOString();
+    
+    return {
+      symbol: cleanSymbol,
+      name: cleanSymbol,
+      history: history,
+      source: 'polygon',
+      timeframe: timeframe,
+      total_points: history.length
+    };
+    
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Polygon.io API failed for ${cleanSymbol}:`, error.message);
+    
+    // 更新錯誤狀態
+    apiKeyStatus.polygon.working = false;
+    apiKeyStatus.polygon.lastError = error.message;
+    apiKeyStatus.polygon.lastUsed = new Date().toISOString();
+    
+    return null;
+  }
+}
+
+// Polygon.io Grouped Daily API - 批量獲取所有股票當日數據
+async function getPolygonGroupedDaily(apiKey, date = null) {
+  try {
+    // 如果沒有指定日期，使用昨天（因為當天數據可能還不完整）
+    const targetDate = date || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const apiUrl = `https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/${targetDate}?adjusted=true&apiKey=${apiKey}`;
+    
+    console.log(`[${new Date().toISOString()}] Fetching grouped daily data from Polygon.io for ${targetDate}`);
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Polygon.io Grouped API HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data.status !== 'OK' || !data.results) {
+      throw new Error('No grouped data available');
+    }
+    
+    // 將結果轉換為 symbol -> data 的 Map
+    const stockMap = new Map();
+    data.results.forEach(item => {
+      stockMap.set(item.T, {
+        date: targetDate,
+        open: item.o,
+        high: item.h,
+        low: item.l,
+        close: item.c,
+        volume: item.v || 0
+      });
+    });
+    
+    console.log(`[${new Date().toISOString()}] ✅ Polygon.io grouped daily: ${stockMap.size} stocks`);
+    
+    return stockMap;
+    
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Polygon.io Grouped API failed:`, error.message);
+    return null;
+  }
+}
+
+// yfinance 數據獲取函數 - 備用數據源
 async function getYfinanceData(cleanSymbol, timeframe) {
   try {
     console.log(`[${new Date().toISOString()}] Using Yahoo Finance official API for ${cleanSymbol}, timeframe=${timeframe}`);
@@ -186,11 +324,6 @@ function canMakeRequest(keyType) {
   return true;
 }
 
-// 輔助函數：等待指定時間
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 // 輔助函數：更新請求記錄
 function recordRequest(keyType) {
   const now = Date.now();
@@ -217,36 +350,54 @@ export default async function handler(request, response) {
   }
 }
 
-// 獲取歷史數據的獨立函數 - 只使用 yfinance
-async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey) {
-  console.log(`[${new Date().toISOString()}] Using yfinance only for ${cleanSymbol}`);
+// 獲取歷史數據的獨立函數 - 優先使用 Polygon.io，備用 yfinance
+async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey, polygonApiKey) {
+  console.log(`[${new Date().toISOString()}] Fetching historical data for ${cleanSymbol}`);
   
+  let historyData = null;
+  let cacheTime = timeframe === '5M' ? 3600 : 86400 * 7;
+  
+  // 優先使用 Polygon.io
+  if (polygonApiKey) {
+    try {
+      const polygonResult = await getPolygonData(cleanSymbol, timeframe, polygonApiKey);
+      
+      if (polygonResult && polygonResult.history && Array.isArray(polygonResult.history) && polygonResult.history.length > 0) {
+        historyData = polygonResult.history;
+        console.log(`[${new Date().toISOString()}] ✅ Polygon.io success: ${historyData.length} data points for ${cleanSymbol}`);
+        return { data: historyData, cacheTime };
+      }
+    } catch (error) {
+      console.warn(`[${new Date().toISOString()}] Polygon.io failed for ${cleanSymbol}, trying fallback:`, error.message);
+    }
+  }
+  
+  // 備用：使用 yfinance
   try {
     const yfinanceResult = await getYfinanceData(cleanSymbol, timeframe);
     
     if (yfinanceResult && yfinanceResult.history && Array.isArray(yfinanceResult.history) && yfinanceResult.history.length > 0) {
-      const historyData = yfinanceResult.history;
-      const cacheTime = timeframe === '5M' ? 3600 : 86400 * 7; // 5分線快取1小時，日線快取7天
+      historyData = yfinanceResult.history;
       
       // 更新 yfinance 成功狀態
       apiKeyStatus.yfinance.working = true;
       apiKeyStatus.yfinance.lastError = null;
       apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
       
-      console.log(`[${new Date().toISOString()}] ✅ yfinance success: ${historyData.length} data points for ${cleanSymbol}`);
+      console.log(`[${new Date().toISOString()}] ✅ yfinance fallback success: ${historyData.length} data points for ${cleanSymbol}`);
       return { data: historyData, cacheTime };
     } else {
       throw new Error('yfinance returned empty data');
     }
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] ❌ yfinance failed for ${cleanSymbol}:`, error.message);
+    console.error(`[${new Date().toISOString()}] ❌ All data sources failed for ${cleanSymbol}:`, error.message);
     
     // 更新 yfinance 錯誤狀態
     apiKeyStatus.yfinance.working = false;
     apiKeyStatus.yfinance.lastError = error.message;
     apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
     
-    throw new Error(`無法從 Yahoo Finance 獲取 ${cleanSymbol} 的歷史資料: ${error.message}`);
+    throw new Error(`無法獲取 ${cleanSymbol} 的歷史資料: ${error.message}`);
   }
 
   // 移除所有其他資料來源 (Twelve Data)
@@ -481,6 +632,7 @@ async function handleApiStatus(_, response) {
     const statusReport = {
       timestamp: new Date().toISOString(),
       environment: {
+        POLYGON_API_KEY: !!process.env.POLYGON_API_KEY,
         YFINANCE_AVAILABLE: true, // yfinance 不需要 API key
         FINNHUB_API_KEY: !!process.env.FINNHUB_API_KEY,
         TWELVE_DATA_API_KEY: !!process.env.TWELVE_DATA_API_KEY,
@@ -536,6 +688,7 @@ async function handleGetStockData(request, response) {
 
     // Log environment for debugging
     console.log('Environment check:', {
+      POLYGON_API_KEY: !!process.env.POLYGON_API_KEY,
       FINNHUB_API_KEY: !!process.env.FINNHUB_API_KEY,
       TWELVE_DATA_API_KEY: !!process.env.TWELVE_DATA_API_KEY,
       TWELVE_DATA_API_KEY_BACKUP: !!process.env.TWELVE_DATA_API_KEY_BACKUP,
@@ -566,9 +719,14 @@ async function handleGetStockData(request, response) {
     });
 
     const finnhubApiKey = process.env.FINNHUB_API_KEY;
+    const polygonApiKey = process.env.POLYGON_API_KEY;
 
     if (!finnhubApiKey) {
       return response.status(500).json({ error: 'FINNHUB_API_KEY 未設定' });
+    }
+    
+    if (!polygonApiKey) {
+      console.warn('POLYGON_API_KEY not set, will use yfinance as fallback');
     }
 
     // 獲取當前日期字符串 (YYYY-MM-DD)
@@ -739,7 +897,7 @@ async function handleGetStockData(request, response) {
         console.log(`[${new Date().toISOString()}] Fetching fresh historical data for ${symbol} on trading day ${tradingDay} (requested: ${today})`);
         
         // 創建一個 Promise 來獲取數據，並將其存儲在 pendingRequests 中
-        const fetchPromise = fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey);
+        const fetchPromise = fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey, polygonApiKey);
         pendingRequests.set(requestKey, fetchPromise);
         
         try {
@@ -747,9 +905,9 @@ async function handleGetStockData(request, response) {
           historyData = result.data;
           cacheTime = result.cacheTime;
         } catch (error) {
-          console.error(`[${new Date().toISOString()}] Yahoo Finance failed for ${cleanSymbol}:`, error);
+          console.error(`[${new Date().toISOString()}] Data fetch failed for ${cleanSymbol}:`, error);
           return response.status(404).json({ 
-            error: `無法從 Yahoo Finance 獲取 ${cleanSymbol} 的歷史資料`,
+            error: `無法獲取 ${cleanSymbol} 的歷史資料`,
             details: error.message
           });
         } finally {
