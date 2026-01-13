@@ -561,24 +561,6 @@ async function handleGetStockData(request, response) {
 
     // Log current API key status
     console.log('Current API Key Status:', JSON.stringify(apiKeyStatus, null, 2));
-    
-    // Log current rate limit status
-    console.log('Current Rate Limit Status:', {
-      twelveData: {
-        primary: {
-          canMakeRequest: canMakeRequest('primary'),
-          isRateLimited: rateLimitControl.twelveData.primary.isRateLimited,
-          requestCount: rateLimitControl.twelveData.primary.requestCount,
-          lastRequest: rateLimitControl.twelveData.primary.lastRequest ? new Date(rateLimitControl.twelveData.primary.lastRequest).toISOString() : null
-        },
-        backup: {
-          canMakeRequest: canMakeRequest('backup'),
-          isRateLimited: rateLimitControl.twelveData.backup.isRateLimited,
-          requestCount: rateLimitControl.twelveData.backup.requestCount,
-          lastRequest: rateLimitControl.twelveData.backup.lastRequest ? new Date(rateLimitControl.twelveData.backup.lastRequest).toISOString() : null
-        }
-      }
-    });
 
     const finnhubApiKey = process.env.FINNHUB_API_KEY;
     const polygonApiKey = process.env.POLYGON_API_KEY;
