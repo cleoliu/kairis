@@ -90,10 +90,10 @@ async function getPolygonData(cleanSymbol, timeframe, apiKey) {
       const toDate = today.toISOString().split('T')[0];
       apiUrl = `https://api.polygon.io/v2/aggs/ticker/${cleanSymbol}/range/5/minute/${fromDate}/${toDate}?adjusted=true&sort=asc&apiKey=${apiKey}`;
     } else {
-      // 日線：最近90天
+      // 日線：最近100天（確保有足夠數據計算指標）
       const today = new Date();
-      const ninetyDaysAgo = new Date(today.getTime() - (90 * 24 * 60 * 60 * 1000));
-      const fromDate = ninetyDaysAgo.toISOString().split('T')[0];
+      const hundredDaysAgo = new Date(today.getTime() - (100 * 24 * 60 * 60 * 1000));
+      const fromDate = hundredDaysAgo.toISOString().split('T')[0];
       const toDate = today.toISOString().split('T')[0];
       apiUrl = `https://api.polygon.io/v2/aggs/ticker/${cleanSymbol}/range/1/day/${fromDate}/${toDate}?adjusted=true&sort=asc&apiKey=${apiKey}`;
     }
@@ -123,9 +123,22 @@ async function getPolygonData(cleanSymbol, timeframe, apiKey) {
     
     const data = await response.json();
     
+    console.log(`[${new Date().toISOString()}] Polygon.io response for ${cleanSymbol}:`, {
+      status: data.status,
+      resultsCount: data.results?.length || 0,
+      queryCount: data.queryCount,
+      resultsCount_api: data.resultsCount
+    });
+    
     // 檢查回應狀態
     if (data.status !== 'OK' || !data.results || data.results.length === 0) {
-      console.error('Invalid Polygon.io response:', data);
+      console.error(`[${new Date().toISOString()}] Invalid Polygon.io response:`, {
+        status: data.status,
+        hasResults: !!data.results,
+        resultsLength: data.results?.length || 0,
+        error: data.error,
+        message: data.message
+      });
       throw new Error(data.status === 'ERROR' ? `Polygon.io error: ${data.error}` : 'No data available');
     }
     
@@ -359,8 +372,7 @@ async function handleWarmupCache(request, response) {
       
       await Promise.allSettled(
         batch.map(async (symbol) => {
-          const maxRetries = 2;
-          let lastError = null;
+          const maxRetries = 3;
           
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
@@ -369,11 +381,19 @@ async function handleWarmupCache(request, response) {
               
               console.log(`[${new Date().toISOString()}] 📊 Warmup ${symbol} (attempt ${attempt}/${maxRetries})...`);
               
-              // 在重試前等待
+              // 檢查 Polygon.io rate limit 狀態
+              const rateLimitCheck = canMakePolygonRequest();
+              if (!rateLimitCheck.canMake) {
+                const waitMs = (rateLimitCheck.waitTime + 1) * 1000;
+                console.log(`[${new Date().toISOString()}] ⏳ Rate limited, waiting ${waitMs}ms for ${symbol}...`);
+                await new Promise(resolve => setTimeout(resolve, waitMs));
+              }
+              
+              // 在重試前額外等待
               if (attempt > 1) {
-                const waitTime = attempt * 5000; // 第2次等5秒，第3次等10秒
-                console.log(`[${new Date().toISOString()}] Waiting ${waitTime}ms before retry...`);
-                await new Promise(resolve => setTimeout(resolve, waitTime));
+                const retryWaitTime = attempt * 5000;
+                console.log(`[${new Date().toISOString()}] Waiting ${retryWaitTime}ms before retry...`);
+                await new Promise(resolve => setTimeout(resolve, retryWaitTime));
               }
               
               // 獲取歷史數據
@@ -400,14 +420,21 @@ async function handleWarmupCache(request, response) {
                 throw new Error(errorMsg);
               }
             } catch (error) {
-              lastError = error;
               const errorDetail = error.message || error.toString();
               console.error(`[${new Date().toISOString()}] ❌ Attempt ${attempt}/${maxRetries} failed for ${symbol}:`, errorDetail);
               
+              // 檢查是否是 rate limit 錯誤
+              const isRateLimitError = errorDetail.includes('Rate limit') || 
+                                       errorDetail.includes('429') || 
+                                       errorDetail.includes('rate limited');
+              
               if (attempt === maxRetries) {
-                // 最後一次重試也失敗了
                 console.error(`[${new Date().toISOString()}] All retries exhausted for ${symbol}`);
                 results.failed.push({ symbol, error: errorDetail });
+              } else if (isRateLimitError) {
+                const extraWait = 15000;
+                console.log(`[${new Date().toISOString()}] 🔄 Rate limit error detected, waiting extra ${extraWait}ms...`);
+                await new Promise(resolve => setTimeout(resolve, extraWait));
               }
             }
           }
