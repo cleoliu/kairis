@@ -92,12 +92,8 @@ async function getPolygonData(cleanSymbol, timeframe, apiKey) {
       const toDate = today.toISOString().split('T')[0];
       apiUrl = `https://api.polygon.io/v2/aggs/ticker/${cleanSymbol}/range/5/minute/${fromDate}/${toDate}?adjusted=true&sort=asc&apiKey=${apiKey}`;
     } else {
-      // 日線：最近90天
-      const today = new Date();
-      const ninetyDaysAgo = new Date(today.getTime() - (90 * 24 * 60 * 60 * 1000));
-      const fromDate = ninetyDaysAgo.toISOString().split('T')[0];
-      const toDate = today.toISOString().split('T')[0];
-      apiUrl = `https://api.polygon.io/v2/aggs/ticker/${cleanSymbol}/range/1/day/${fromDate}/${toDate}?adjusted=true&sort=asc&apiKey=${apiKey}`;
+      // 日線數據不需要在這裡處理，應該使用 Grouped Daily API
+      throw new Error('Daily data should use Grouped Daily API instead');
     }
     
     console.log(`[${new Date().toISOString()}] Fetching from Polygon.io: ${apiUrl}`);
