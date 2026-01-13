@@ -333,21 +333,179 @@ function recordRequest(keyType) {
 }
 
 export default async function handler(request, response) {
-  const { action } = request.query;
+  // 支持從 query 或 body 讀取 action
+  const action = request.query?.action || request.body?.action;
 
   if (request.method === 'GET') {
     if (action === 'get_news') {
       return handleGetNews(request, response);
     } else if (action === 'api_status') {
       return handleApiStatus(request, response);
+    } else if (action === 'warmup_cache') {
+      return handleWarmupCache(request, response);
     }
     return handleGetStockData(request, response);
   } else if (request.method === 'POST') {
+    // POST 支持 warmup_cache 或 Gemini 分析
+    if (action === 'warmup_cache') {
+      return handleWarmupCache(request, response);
+    }
     return handleGeminiAnalysis(request, response);
   } else {
     response.setHeader('Allow', ['GET', 'POST']);
     return response.status(405).end(`Method ${request.method} Not Allowed`);
   }
+}
+
+// 處理緩存預熱請求 - 供 n8n 每日定時調用
+async function handleWarmupCache(request, response) {
+  try {
+    // 支持 GET (query params) 和 POST (JSON body) 兩種方式
+    let symbols, secret;
+    
+    if (request.method === 'POST') {
+      symbols = request.body?.symbols;
+      secret = request.body?.secret;
+    } else {
+      symbols = request.query?.symbols;
+      secret = request.query?.secret;
+    }
+    
+    // 驗證密鑰
+    const expectedSecret = process.env.WARMUP_SECRET || 'change-me-in-production';
+    if (secret !== expectedSecret) {
+      console.error(`[${new Date().toISOString()}] Auth failed: expected="${expectedSecret}", received="${secret}"`);
+      return response.status(401).json({ error: '未授權的請求' });
+    }
+    
+    if (!symbols) {
+      return response.status(400).json({ error: '必須提供 symbols 參數' });
+    }
+    
+    const polygonApiKey = process.env.POLYGON_API_KEY;
+    const finnhubApiKey = process.env.FINNHUB_API_KEY;
+    
+    if (!polygonApiKey && !finnhubApiKey) {
+      return response.status(500).json({ error: 'API keys 未設定' });
+    }
+    
+    const symbolList = symbols.split(',').map(s => s.trim());
+    console.log(`[${new Date().toISOString()}] 🔥 Warmup cache request for ${symbolList.length} symbols`);
+    
+    const results = {
+      success: [],
+      failed: [],
+      total: symbolList.length
+    };
+    
+    // 批次處理，每批 2 個股票（降低並發避免 rate limit）
+    const BATCH_SIZE = 2;
+    for (let i = 0; i < symbolList.length; i += BATCH_SIZE) {
+      const batch = symbolList.slice(i, i + BATCH_SIZE);
+      
+      await Promise.allSettled(
+        batch.map(async (symbol) => {
+          const maxRetries = 3;
+          
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              const cleanSymbol = symbol.replace(/\.US$/, '');
+              const today = new Date().toISOString().split('T')[0];
+              
+              console.log(`[${new Date().toISOString()}] 📊 Warmup ${symbol} (attempt ${attempt}/${maxRetries})...`);
+              
+              // 檢查並等待 rate limit
+              await waitForRateLimit();
+              
+              // 在重試前額外等待
+              if (attempt > 1) {
+                const retryWaitTime = attempt * 5000;
+                console.log(`[${new Date().toISOString()}] Waiting ${retryWaitTime}ms before retry...`);
+                await new Promise(resolve => setTimeout(resolve, retryWaitTime));
+              }
+              
+              // 獲取歷史數據（日線）
+              console.log(`[${new Date().toISOString()}] Calling fetchHistoricalData for ${cleanSymbol}...`);
+              const historyResult = await fetchHistoricalData(cleanSymbol, null, finnhubApiKey, polygonApiKey);
+              
+              if (historyResult?.data && Array.isArray(historyResult.data) && historyResult.data.length > 0) {
+                // 緩存歷史數據
+                const historyCacheKey = `global_history_${symbol}_${today}`;
+                const cacheTime = 86400 * 7; // 7天
+                
+                await kv.set(historyCacheKey, historyResult.data, { ex: cacheTime });
+                
+                console.log(`[${new Date().toISOString()}] ✅ Cached ${symbol}: ${historyResult.data.length} data points`);
+                results.success.push(symbol);
+                return;
+              } else {
+                throw new Error('No data returned from fetchHistoricalData');
+              }
+            } catch (error) {
+              const errorDetail = error.message || error.toString();
+              console.error(`[${new Date().toISOString()}] ❌ Attempt ${attempt}/${maxRetries} failed for ${symbol}:`, errorDetail);
+              
+              // 檢查是否是 rate limit 錯誤
+              const isRateLimitError = errorDetail.includes('Rate limit') || 
+                                       errorDetail.includes('429') || 
+                                       errorDetail.includes('rate limited');
+              
+              if (attempt === maxRetries) {
+                console.error(`[${new Date().toISOString()}] All retries exhausted for ${symbol}`);
+                results.failed.push({ symbol, error: errorDetail });
+              } else if (isRateLimitError) {
+                const extraWait = 15000;
+                console.log(`[${new Date().toISOString()}] 🔄 Rate limit error detected, waiting extra ${extraWait}ms...`);
+                await new Promise(resolve => setTimeout(resolve, extraWait));
+              }
+            }
+          }
+        })
+      );
+      
+      // 避免 API rate limit，批次之間等待
+      if (i + BATCH_SIZE < symbolList.length) {
+        console.log(`[${new Date().toISOString()}] Waiting 15s before next batch...`);
+        await new Promise(resolve => setTimeout(resolve, 15000));
+      }
+    }
+    
+    console.log(`[${new Date().toISOString()}] 🎉 Warmup completed: ${results.success.length}/${results.total} successful`);
+    
+    return response.status(200).json({
+      success: true,
+      message: 'Cache warmup completed',
+      results
+    });
+    
+  } catch (error) {
+    console.error('handleWarmupCache Error:', error);
+    return response.status(500).json({ 
+      error: '緩存預熱時發生錯誤',
+      details: error.message 
+    });
+  }
+}
+
+// 輔助函數：等待 rate limit 解除
+async function waitForRateLimit() {
+  // 如果使用 Polygon.io，等待足夠時間
+  const now = Date.now();
+  const minInterval = 12000; // 12秒間隔確保不超過 5 requests/minute
+  
+  // 簡單的全局 rate limit 控制
+  if (!globalThis.lastPolygonRequest) {
+    globalThis.lastPolygonRequest = 0;
+  }
+  
+  const timeSinceLastRequest = now - globalThis.lastPolygonRequest;
+  if (timeSinceLastRequest < minInterval) {
+    const waitTime = minInterval - timeSinceLastRequest;
+    console.log(`[${new Date().toISOString()}] ⏳ Waiting ${waitTime}ms for rate limit...`);
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+  
+  globalThis.lastPolygonRequest = Date.now();
 }
 
 // 獲取歷史數據的獨立函數 - 優先使用 Polygon.io，備用 yfinance
