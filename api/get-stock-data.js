@@ -2,6 +2,17 @@
 // 檔案路徑: /api/get-stock-data.js
 // 需要在 Vercel 專案中連結 Vercel KV 儲存體
 
+// @vercel/kv 需要舊的環境變數名稱，所以從新名稱映射過去
+if (process.env.upstash_KV_REST_API_URL) {
+  process.env.KV_REST_API_URL = process.env.upstash_KV_REST_API_URL;
+}
+if (process.env.upstash_KV_REST_API_TOKEN) {
+  process.env.KV_REST_API_TOKEN = process.env.upstash_KV_REST_API_TOKEN;
+}
+if (process.env.upstash_KV_URL) {
+  process.env.KV_URL = process.env.upstash_KV_URL;
+}
+
 import { kv } from '@vercel/kv';
 
 // 檢查 KV 是否可用 - 支持新舊環境變數名稱
