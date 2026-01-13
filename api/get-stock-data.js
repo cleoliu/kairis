@@ -17,7 +17,7 @@ const polygonRateLimit = {
   requestTimestamps: [],
   maxRequests: 5,
   windowMs: 60000, // 1分鐘
-  minInterval: 1000, // 每次請求間隔1秒（從12秒降低）
+  minInterval: 12000, // 每次請求間隔12秒
   isRateLimited: false,
   rateLimitResetTime: 0
 };
