@@ -377,7 +377,13 @@ async function handleWarmupCache(request, response) {
               }
               
               // 獲取歷史數據
+              console.log(`[${new Date().toISOString()}] Calling fetchHistoricalData for ${cleanSymbol}...`);
               const historyResult = await fetchHistoricalData(cleanSymbol, null, finnhubApiKey, polygonApiKey);
+              console.log(`[${new Date().toISOString()}] fetchHistoricalData result:`, { 
+                hasData: !!historyResult?.data, 
+                isArray: Array.isArray(historyResult?.data),
+                length: historyResult?.data?.length 
+              });
               
               if (historyResult?.data && Array.isArray(historyResult.data) && historyResult.data.length > 0) {
                 // 緩存歷史數據
@@ -462,22 +468,39 @@ export default async function handler(request, response) {
 
 // 獲取歷史數據的獨立函數 - 只使用 Polygon.io
 async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey, polygonApiKey) {
-  console.log(`[${new Date().toISOString()}] Fetching historical data for ${cleanSymbol}`);
+  console.log(`[${new Date().toISOString()}] fetchHistoricalData called for ${cleanSymbol}, timeframe=${timeframe}`);
   
   const cacheTime = timeframe === '5M' ? 3600 : 86400 * 7;
   
   if (!polygonApiKey) {
-    throw new Error('POLYGON_API_KEY not configured');
+    const error = 'POLYGON_API_KEY not configured';
+    console.error(`[${new Date().toISOString()}] ❌ ${error}`);
+    throw new Error(error);
   }
   
-  const polygonResult = await getPolygonData(cleanSymbol, timeframe, polygonApiKey);
-  
-  if (polygonResult?.history?.length > 0) {
-    console.log(`[${new Date().toISOString()}] ✅ Polygon.io success: ${polygonResult.history.length} data points for ${cleanSymbol}`);
-    return { data: polygonResult.history, cacheTime };
+  try {
+    console.log(`[${new Date().toISOString()}] Calling getPolygonData for ${cleanSymbol}...`);
+    const polygonResult = await getPolygonData(cleanSymbol, timeframe, polygonApiKey);
+    console.log(`[${new Date().toISOString()}] getPolygonData result:`, { 
+      hasResult: !!polygonResult,
+      hasHistory: !!polygonResult?.history,
+      historyLength: polygonResult?.history?.length 
+    });
+    
+    if (polygonResult?.history?.length > 0) {
+      console.log(`[${new Date().toISOString()}] ✅ Polygon.io success: ${polygonResult.history.length} data points for ${cleanSymbol}`);
+      return { data: polygonResult.history, cacheTime };
+    }
+    
+    const errorMsg = `Polygon.io returned no data for ${cleanSymbol}`;
+    console.error(`[${new Date().toISOString()}] ❌ ${errorMsg}`);
+    throw new Error(errorMsg);
+    
+  } catch (error) {
+    const errorMsg = `Polygon.io fetch failed for ${cleanSymbol}: ${error.message}`;
+    console.error(`[${new Date().toISOString()}] ❌ ${errorMsg}`);
+    throw new Error(errorMsg);
   }
-  
-  throw new Error(`無法從 Polygon.io 獲取 ${cleanSymbol} 的歷史資料`);
 }
 
 // 處理 API 狀態查詢
