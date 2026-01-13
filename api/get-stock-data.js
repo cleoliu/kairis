@@ -17,10 +17,74 @@ const apiKeyStatus = {
   }
 };
 
+// Polygon.io Rate Limit 控制 (免費版：5 requests/minute)
+const polygonRateLimit = {
+  requestTimestamps: [],
+  maxRequests: 5,
+  windowMs: 60000, // 1分鐘
+  minInterval: 12000, // 每次請求間隔12秒
+  isRateLimited: false,
+  rateLimitResetTime: 0
+};
+
+// 檢查是否可以發起 Polygon.io 請求
+function canMakePolygonRequest() {
+  const now = Date.now();
+  
+  if (polygonRateLimit.isRateLimited) {
+    if (now > polygonRateLimit.rateLimitResetTime) {
+      polygonRateLimit.isRateLimited = false;
+      console.log(`[${new Date().toISOString()}] Polygon.io rate limit expired`);
+    } else {
+      const waitTime = Math.ceil((polygonRateLimit.rateLimitResetTime - now) / 1000);
+      console.warn(`[${new Date().toISOString()}] Polygon.io is rate limited, wait ${waitTime}s`);
+      return { canMake: false, waitTime };
+    }
+  }
+  
+  // 清理超過時間窗口的記錄
+  polygonRateLimit.requestTimestamps = polygonRateLimit.requestTimestamps.filter(
+    timestamp => now - timestamp < polygonRateLimit.windowMs
+  );
+  
+  // 檢查是否超過請求數限制
+  if (polygonRateLimit.requestTimestamps.length >= polygonRateLimit.maxRequests) {
+    const oldestRequest = polygonRateLimit.requestTimestamps[0];
+    const waitTime = Math.ceil((oldestRequest + polygonRateLimit.windowMs - now) / 1000);
+    console.warn(`[${new Date().toISOString()}] Polygon.io rate limit: ${polygonRateLimit.requestTimestamps.length}/${polygonRateLimit.maxRequests} requests, wait ${waitTime}s`);
+    return { canMake: false, waitTime };
+  }
+  
+  // 檢查最小間隔
+  if (polygonRateLimit.requestTimestamps.length > 0) {
+    const lastRequest = polygonRateLimit.requestTimestamps[polygonRateLimit.requestTimestamps.length - 1];
+    const timeSinceLastRequest = now - lastRequest;
+    if (timeSinceLastRequest < polygonRateLimit.minInterval) {
+      const waitTime = Math.ceil((polygonRateLimit.minInterval - timeSinceLastRequest) / 1000);
+      console.log(`[${new Date().toISOString()}] Polygon.io min interval not met, wait ${waitTime}s`);
+      return { canMake: false, waitTime };
+    }
+  }
+  
+  return { canMake: true, waitTime: 0 };
+}
+
+// 記錄 Polygon.io 請求
+function recordPolygonRequest() {
+  polygonRateLimit.requestTimestamps.push(Date.now());
+  console.log(`[${new Date().toISOString()}] Polygon.io requests in window: ${polygonRateLimit.requestTimestamps.length}/${polygonRateLimit.maxRequests}`);
+}
+
 // Polygon.io 數據獲取函數 - 主要數據源（速度快）
 async function getPolygonData(cleanSymbol, timeframe, apiKey) {
   try {
     console.log(`[${new Date().toISOString()}] Using Polygon.io API for ${cleanSymbol}, timeframe=${timeframe}`);
+    
+    // 檢查 rate limit
+    const rateLimitCheck = canMakePolygonRequest();
+    if (!rateLimitCheck.canMake) {
+      throw new Error(`Rate limited: wait ${rateLimitCheck.waitTime}s`);
+    }
     
     let apiUrl;
     if (timeframe === '5M') {
@@ -41,12 +105,22 @@ async function getPolygonData(cleanSymbol, timeframe, apiKey) {
     
     console.log(`[${new Date().toISOString()}] Fetching from Polygon.io: ${apiUrl}`);
     
+    // 記錄請求
+    recordPolygonRequest();
+    
     const response = await fetch(apiUrl, {
       method: 'GET',
       headers: {
         'Accept': 'application/json'
       }
     });
+    
+    // 處理 HTTP 429 錯誤
+    if (response.status === 429) {
+      polygonRateLimit.isRateLimited = true;
+      polygonRateLimit.rateLimitResetTime = Date.now() + 60000; // 1分鐘後重試
+      throw new Error('HTTP 429: Rate limit exceeded');
+    }
     
     if (!response.ok) {
       throw new Error(`Polygon.io API HTTP ${response.status}: ${response.statusText}`);
@@ -294,10 +368,12 @@ async function handleWarmupCache(request, response) {
             const cleanSymbol = symbol.replace(/\.US$/, '');
             const today = new Date().toISOString().split('T')[0];
             
+            console.log(`[${new Date().toISOString()}] 📊 Starting warmup for ${symbol}...`);
+            
             // 獲取歷史數據
             const historyResult = await fetchHistoricalData(cleanSymbol, null, finnhubApiKey, polygonApiKey);
             
-            if (historyResult?.data) {
+            if (historyResult?.data && Array.isArray(historyResult.data) && historyResult.data.length > 0) {
               // 緩存歷史數據
               const historyCacheKey = `global_history_${symbol}_${today}`;
               const cacheTime = 86400 * 7; // 7天
@@ -307,11 +383,15 @@ async function handleWarmupCache(request, response) {
               console.log(`[${new Date().toISOString()}] ✅ Cached ${symbol}: ${historyResult.data.length} data points`);
               results.success.push(symbol);
             } else {
-              throw new Error('No data returned');
+              const errorMsg = historyResult?.data ? 'Empty data array' : 'No data returned from fetchHistoricalData';
+              console.error(`[${new Date().toISOString()}] ⚠️ ${symbol}: ${errorMsg}`);
+              throw new Error(errorMsg);
             }
           } catch (error) {
-            console.error(`[${new Date().toISOString()}] ❌ Failed to cache ${symbol}:`, error.message);
-            results.failed.push({ symbol, error: error.message });
+            const errorDetail = error.message || error.toString();
+            console.error(`[${new Date().toISOString()}] ❌ Failed to cache ${symbol}:`, errorDetail);
+            console.error(`[${new Date().toISOString()}] Error stack:`, error.stack);
+            results.failed.push({ symbol, error: errorDetail });
           }
         })
       );
