@@ -6,13 +6,30 @@
 
 ## API 端點
 
+支持兩種調用方式：
+
+### 方式 1: GET 請求（URL 參數）
+
 ```
 GET /api/get-stock-data?action=warmup_cache&symbols=AAPL.US,NVDA.US,MSFT.US&secret=YOUR_SECRET
 ```
 
+### 方式 2: POST 請求（JSON Body）
+
+```
+POST /api/get-stock-data
+Content-Type: application/json
+
+{
+  "action": "warmup_cache",
+  "symbols": "AAPL.US,NVDA.US,MSFT.US",
+  "secret": "YOUR_SECRET"
+}
+```
+
 ## 參數
 
-- `action=warmup_cache` - 必須，指定使用緩存預熱功能
+- `action` - 必須，值為 `warmup_cache`
 - `symbols` - 必須，要預熱的股票代碼列表，用逗號分隔（例如：`AAPL.US,NVDA.US,MSFT.US`）
 - `secret` - 必須，驗證密鑰，防止未授權訪問
 

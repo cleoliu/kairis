@@ -243,11 +243,23 @@ async function handleGroupedDaily(request, response) {
 // 處理緩存預熱請求 - 供 n8n 每日定時調用
 async function handleWarmupCache(request, response) {
   try {
-    const { symbols, secret } = request.query;
+    // 支持 GET (query params) 和 POST (JSON body) 兩種方式
+    let symbols, secret;
+    
+    if (request.method === 'POST') {
+      // POST 方法：從 body 讀取
+      symbols = request.body?.symbols;
+      secret = request.body?.secret;
+    } else {
+      // GET 方法：從 query params 讀取
+      symbols = request.query?.symbols;
+      secret = request.query?.secret;
+    }
     
     // 驗證密鑰
     const expectedSecret = process.env.WARMUP_SECRET || 'change-me-in-production';
     if (secret !== expectedSecret) {
+      console.error(`[${new Date().toISOString()}] Auth failed: expected="${expectedSecret}", received="${secret}"`);
       return response.status(401).json({ error: '未授權的請求' });
     }
     
@@ -506,7 +518,8 @@ function recordRequest(keyType) {
 }
 
 export default async function handler(request, response) {
-  const { action } = request.query;
+  // 支持從 query 或 body 讀取 action
+  const action = request.query?.action || request.body?.action;
 
   if (request.method === 'GET') {
     if (action === 'get_news') {
@@ -520,6 +533,10 @@ export default async function handler(request, response) {
     }
     return handleGetStockData(request, response);
   } else if (request.method === 'POST') {
+    // POST 支持 warmup_cache 或 Gemini 分析
+    if (action === 'warmup_cache') {
+      return handleWarmupCache(request, response);
+    }
     return handleGeminiAnalysis(request, response);
   } else {
     response.setHeader('Allow', ['GET', 'POST']);
