@@ -95,9 +95,8 @@
 - **資料庫**: Google [Firebase](https://firebase.google.com/) (Firestore) 用於儲存使用者自選股，並支援匿名登入與 Google 登入。
 - **快取系統**: [Vercel KV](https://vercel.com/docs/storage/vercel-kv) (基於 Redis) 用於提升 API 性能。
 - **API 組合**:
-  - [Polygon.io](https://polygon.io/): **主要數據源**，用於獲取美股歷史 K 線數據（免費版限制：5 次/分鐘，速度快）。
-  - [Finnhub](https://finnhub.io/): 用於獲取美股即時報價與公司新聞（免費版限制：無歷史 K 線數據）。
-  - Yahoo Finance API: 備用數據源，當 Polygon.io 失敗時自動切換。
+  - [Polygon.io](https://polygon.io/): **唯一數據源**，用於獲取美股歷史 K 線數據（免費版限制：5 次/分鐘，速度快）。
+  - [Finnhub](https://finnhub.io/): 用於獲取美股即時報價與公司新聞。
   - [Google Gemini API](https://ai.google.dev/): 用於 AI 智慧解讀與新聞標題翻譯。
 - **部署**: 程式碼託管於 GitHub，並透過 Vercel 進行自動化部署。
 
@@ -152,11 +151,6 @@
 - ❌ **限制**: 無法存取歷史 K 線數據
 - ❌ **不支援**: 台股、港股等非美國市場
 
-#### Yahoo Finance API (備用數據源)
-- ✅ **支援功能**: 美股歷史數據、完整 OHLCV 資料
-- ✅ **限制**: 完全免費，無 API key 需求
-- ⚠️ **缺點**: 速度較慢，穩定性較低
-- 📝 **用途**: 當 Polygon.io 失敗時自動切換
 
 #### Google Gemini API
 - ✅ **支援功能**: AI 分析、文字翻譯
@@ -183,30 +177,38 @@
 應用程式已實作以下錯誤處理：
 - **台股請求**: 前端和後端雙重阻止，顯示「目前暫不支援台股查詢」
 - **股票不存在**: 顯示「股票代號不存在或不支援」
-- **API 失敗自動切換**: Polygon.io 失敗時自動切換到 Yahoo Finance
-- **即時報價備援**: Finnhub 失敗時自動使用 Yahoo Finance 最新數據
+- **Rate Limit 保護**: Polygon.io 超過 5 次/分鐘時自動阻止請求
 - **API 限制**: 顯示具體錯誤原因和建議
 - **快取失敗**: 自動跳過快取，直接從 API 獲取數據
 
 ## 7. 未來發展 (Future Roadmap)
 
 - **批量查詢優化**: 使用 Polygon.io Grouped Daily API 實現一次性獲取所有自選股數據
-- **升級 API 方案**: 考慮付費 API 以解除限制並支援更多市場
+- **升級 API 方案**: 考慮 Polygon.io 付費版（解除 rate limit，支援更多功能）
 - **支援台股 API**: 尋找並整合可靠的台股 API 來源
 - **自訂掃描條件**: 讓使用者可以自訂「機會掃描」的篩選策略
-- **資料快取優化**: 改善快取策略以減少 API 呼叫次數
 - **多語言支援**: 擴展至英文等其他語言介面
 
 ## 8. 技術變更記錄
 
-### 2026-01-13: 更換主要數據源為 Polygon.io
-- **原因**: Yahoo Finance API 速度較慢，影響使用者體驗
-- **變更**: 
+### 2026-01-13: 更換為 Polygon.io 單一數據源
+- **第一次變更** (早上):
   - 主要數據源從 Yahoo Finance 改為 Polygon.io
   - Yahoo Finance 降為備用數據源
-  - 移除 Twelve Data API（限制過多）
+  - 移除 Twelve Data API
+  
+- **第二次變更** (下午):
+  - 完全移除 Yahoo Finance API
+  - Polygon.io 成為唯一數據源
+  - 新增 Rate Limit 控制機制（5 次/分鐘）
+  - 優化智能快取策略
+  
 - **優勢**:
-  - API 響應速度提升 3-5 倍
-  - 支援批量查詢（Grouped Daily API）
-  - 數據品質穩定
-  - 自動容錯機制（失敗時切換到 Yahoo Finance）
+  - API 響應速度快
+  - 數據品質穩定一致
+  - 避免 429 錯誤（rate limit 保護）
+  - 減少 API 調用 ~70%（智能快取）
+  
+- **注意事項**:
+  - 必須設定 `POLYGON_API_KEY` 環境變數
+  - 免費版限制 5 次/分鐘，適合 30 檔以內自選股
