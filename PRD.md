@@ -95,9 +95,8 @@
 - **資料庫**: Google [Firebase](https://firebase.google.com/) (Firestore) 用於儲存使用者自選股，並支援匿名登入與 Google 登入。
 - **快取系統**: [Vercel KV](https://vercel.com/docs/storage/vercel-kv) (基於 Redis) 用於提升 API 性能。
 - **API 組合**:
-  - [Polygon.io](https://polygon.io/): **主要數據源**，用於獲取美股歷史 K 線數據（免費版限制：5 次/分鐘，速度快）。
   - [Finnhub](https://finnhub.io/): 用於獲取美股即時報價與公司新聞（免費版限制：無歷史 K 線數據）。
-  - Yahoo Finance API: 備用數據源，當 Polygon.io 失敗時自動切換。
+  - [Twelve Data](https://twelvedata.com/): 主要用於獲取美股歷史 K 線數據（免費版限制：每日 800 次請求）。
   - [Google Gemini API](https://ai.google.dev/): 用於 AI 智慧解讀與新聞標題翻譯。
 - **部署**: 程式碼託管於 GitHub，並透過 Vercel 進行自動化部署。
 
@@ -110,8 +109,8 @@
 - [GitHub](https://github.com/)
 - [Vercel](https://vercel.com/)
 - [Google Firebase](https://firebase.google.com/)
-- [Polygon.io](https://polygon.io/) - **必須**（主要數據源）
 - [Finnhub](https://finnhub.io/)
+- [Twelve Data](https://twelvedata.com/)
 - [Google AI Studio (for Gemini API)](https://aistudio.google.com/)
 
 #### 2. 專案設定
@@ -126,9 +125,9 @@
 
 3.  **部署到 Vercel**:
     - 在 Vercel 上從您的 GitHub 儲存庫匯入專案。
-    - 在專案設定的「Environment Variables」中，新增以下金鑰：
-      - `POLYGON_API_KEY`: 從 Polygon.io 獲取的 API 金鑰（**必須**）
+    - 在專案設定的「Environment Variables」中，新增以下三個金鑰：
       - `FINNHUB_API_KEY`: 從 Finnhub 獲取的 API 金鑰
+      - `TWELVE_DATA_API_KEY`: 從 Twelve Data 獲取的 API 金鑰  
       - `GEMINI_API_KEY`: 從 Google AI Studio 獲取的 API 金鑰
     - 設定 Vercel KV 快取:
       - 「Storage」分頁，選擇「Upstash」>「Upstash for Redis」，點擊「Create」按鈕
@@ -140,23 +139,17 @@
 
 ### 6.1 免費 API 限制
 
-#### Polygon.io API (免費版) - **主要數據源**
-- ✅ **支援功能**: 美股歷史 K 線數據、完整 OHLCV 資料、5分線/日線/週線
-- ✅ **速度**: 非常快，API 響應時間優秀
-- ⚠️ **限制**: 5 次/分鐘，歷史數據限制 2 年
-- 📊 **數據範圍**: 支援所有在 NYSE、NASDAQ 交易的股票
-- 💡 **特色**: 支援 Grouped Daily API，可一次獲取所有股票當日數據
-
 #### Finnhub API (免費版)
 - ✅ **支援功能**: 美股即時報價、公司資訊、新聞
-- ❌ **限制**: 無法存取歷史 K 線數據
+- ❌ **限制**: 無法存取歷史 K 線數據 (`"You don't have access to this resource"`)
 - ❌ **不支援**: 台股、港股等非美國市場
+- ⚠️ **注意**: 5 分線功能可能無法使用
 
-#### Yahoo Finance API (備用數據源)
-- ✅ **支援功能**: 美股歷史數據、完整 OHLCV 資料
-- ✅ **限制**: 完全免費，無 API key 需求
-- ⚠️ **缺點**: 速度較慢，穩定性較低
-- 📝 **用途**: 當 Polygon.io 失敗時自動切換
+#### Twelve Data API (免費版)  
+- ✅ **支援功能**: 美股歷史日線數據、完整 OHLCV 資料
+- ⚠️ **限制**: 每日 800 次請求
+- ❌ **不支援**: 台股、部分 OTC 股票
+- 📊 **數據範圍**: 主要支援在 NYSE、NASDAQ 交易的股票
 
 #### Google Gemini API
 - ✅ **支援功能**: AI 分析、文字翻譯
@@ -183,30 +176,14 @@
 應用程式已實作以下錯誤處理：
 - **台股請求**: 前端和後端雙重阻止，顯示「目前暫不支援台股查詢」
 - **股票不存在**: 顯示「股票代號不存在或不支援」
-- **API 失敗自動切換**: Polygon.io 失敗時自動切換到 Yahoo Finance
-- **即時報價備援**: Finnhub 失敗時自動使用 Yahoo Finance 最新數據
+- **無歷史資料**: 使用當前報價建立基本歷史數據點，優化技術指標計算
 - **API 限制**: 顯示具體錯誤原因和建議
 - **快取失敗**: 自動跳過快取，直接從 API 獲取數據
 
 ## 7. 未來發展 (Future Roadmap)
 
-- **批量查詢優化**: 使用 Polygon.io Grouped Daily API 實現一次性獲取所有自選股數據
 - **升級 API 方案**: 考慮付費 API 以解除限制並支援更多市場
 - **支援台股 API**: 尋找並整合可靠的台股 API 來源
 - **自訂掃描條件**: 讓使用者可以自訂「機會掃描」的篩選策略
 - **資料快取優化**: 改善快取策略以減少 API 呼叫次數
 - **多語言支援**: 擴展至英文等其他語言介面
-
-## 8. 技術變更記錄
-
-### 2026-01-13: 更換主要數據源為 Polygon.io
-- **原因**: Yahoo Finance API 速度較慢，影響使用者體驗
-- **變更**: 
-  - 主要數據源從 Yahoo Finance 改為 Polygon.io
-  - Yahoo Finance 降為備用數據源
-  - 移除 Twelve Data API（限制過多）
-- **優勢**:
-  - API 響應速度提升 3-5 倍
-  - 支援批量查詢（Grouped Daily API）
-  - 數據品質穩定
-  - 自動容錯機制（失敗時切換到 Yahoo Finance）
