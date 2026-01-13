@@ -1087,7 +1087,6 @@ const App = {
         switch(this.state.detailViewTab) {
             case 'analysis':
                 tabContainer.innerHTML = this.getAnalysisContentHTML(symbol);
-                document.getElementById('gemini-analysis-btn').addEventListener('click', () => this.handleGeminiAnalysis(symbol));
                 break;
             case 'chart':
                 tabContainer.innerHTML = this.getChartContentHTML(symbol);
@@ -1148,15 +1147,6 @@ const App = {
                     ${this.createAnalysisCard('布林通道', `上軌: ${indicators.bb.upper.toFixed(2)}<br>下軌: ${indicators.bb.lower.toFixed(2)}`)}
                     ${this.createAnalysisCard('量價關係', `5日均量比: <span class="font-bold text-xl">${(stock.history[0].volume / indicators.avgVol5).toFixed(2)}</span>`)}
                 </div>
-            </div>
-            <div class="bg-slate-800 p-4 rounded-xl shadow-md">
-                 <h3 class="text-lg font-bold mb-3">Gemini AI 智慧解讀</h3>
-                 <button id="gemini-analysis-btn" class="bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-lg transition-colors w-full" ${this.state.isGeminiLoading ? 'disabled' : ''}>
-                    ${this.state.isGeminiLoading ? '分析中...' : '生成技術面分析 ✨'}
-                 </button>
-                 <div id="gemini-analysis-result" class="mt-4 p-3 bg-slate-700 rounded-lg text-slate-300 min-h-[100px] text-sm break-words">
-                    點擊按鈕，讓 AI 為您解讀目前的技術指標。
-                 </div>
             </div>
         `;
     },

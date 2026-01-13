@@ -398,9 +398,14 @@ async function handleWarmupCache(request, response) {
       total: symbolList.length
     };
     
-    // 批次處理，每批 2 個股票（降低並發避免 rate limit）
-    const BATCH_SIZE = 2;
-    for (let i = 0; i < symbolList.length; i += BATCH_SIZE) {
+    // 批次處理，每批 1 個股票（避免超時和 rate limit）
+    const BATCH_SIZE = 1;
+    
+    // Vercel 有 10 秒超時限制，所以最多處理 5 個股票
+    const maxSymbols = Math.min(symbolList.length, 5);
+    console.log(`[${new Date().toISOString()}] Processing ${maxSymbols} symbols (limited by Vercel timeout)`);
+    
+    for (let i = 0; i < maxSymbols; i += BATCH_SIZE) {
       const batch = symbolList.slice(i, i + BATCH_SIZE);
       
       await Promise.allSettled(
@@ -463,18 +468,27 @@ async function handleWarmupCache(request, response) {
         })
       );
       
-      // 避免 API rate limit，批次之間等待
-      if (i + BATCH_SIZE < symbolList.length) {
-        console.log(`[${new Date().toISOString()}] Waiting 15s before next batch...`);
-        await new Promise(resolve => setTimeout(resolve, 15000));
+      // 避免 API rate limit，批次之間等待較短時間
+      if (i + BATCH_SIZE < maxSymbols) {
+        console.log(`[${new Date().toISOString()}] Waiting 3s before next batch...`);
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
     
-    console.log(`[${new Date().toISOString()}] 🎉 Warmup completed: ${results.success.length}/${results.total} successful`);
+    // 如果還有未處理的股票，提醒用戶再次調用
+    const remaining = symbolList.length - maxSymbols;
+    const message = remaining > 0 
+      ? `Processed ${results.success.length}/${maxSymbols} symbols. ${remaining} symbols remaining (call again to process more)`
+      : `All ${results.success.length} symbols processed successfully`;
+    
+    console.log(`[${new Date().toISOString()}] 🎉 Warmup completed: ${message}`);
     
     return response.status(200).json({
       success: true,
-      message: 'Cache warmup completed',
+      message,
+      processed: results.success.length,
+      failed: results.failed.length,
+      remaining: remaining,
       results
     });
     
