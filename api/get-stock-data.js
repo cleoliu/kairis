@@ -4,6 +4,36 @@
 
 import { kv } from '@vercel/kv';
 
+// 檢查 KV 是否可用 - 支持新舊環境變數名稱
+const KV_REST_API_URL = process.env.upstash_KV_REST_API_URL || process.env.KV_REST_API_URL;
+const KV_REST_API_TOKEN = process.env.upstash_KV_REST_API_TOKEN || process.env.KV_REST_API_TOKEN;
+const KV_ENABLED = !!(KV_REST_API_URL && KV_REST_API_TOKEN);
+
+console.log(`[${new Date().toISOString()}] KV Cache ${KV_ENABLED ? 'ENABLED' : 'DISABLED'}`);
+if (KV_ENABLED) {
+  console.log(`[${new Date().toISOString()}] Using KV URL: ${KV_REST_API_URL?.substring(0, 30)}...`);
+}
+
+// 安全的 KV 操作包裝函數
+async function safeKvGet(key) {
+  if (!KV_ENABLED) return null;
+  try {
+    return await kv.get(key);
+  } catch (error) {
+    console.error(`KV get error for key ${key}:`, error.message);
+    return null;
+  }
+}
+
+async function safeKvSet(key, value, options) {
+  if (!KV_ENABLED) return;
+  try {
+    await kv.set(key, value, options);
+  } catch (error) {
+    console.error(`KV set error for key ${key}:`, error.message);
+  }
+}
+
 // 全局變數來追蹤正在進行的請求
 const pendingRequests = new Map();
 
@@ -466,7 +496,7 @@ async function handleWarmupCache(request, response) {
                 const historyCacheKey = `global_history_${symbol}_${today}`;
                 const cacheTime = 86400 * 7; // 7天
                 
-                await kv.set(historyCacheKey, historyResult.data, { ex: cacheTime });
+                await safeKvSet(historyCacheKey, historyResult.data, { ex: cacheTime });
                 
                 console.log(`[${new Date().toISOString()}] ✅ Cached ${symbol}: ${historyResult.data.length} data points`);
                 results.success.push(symbol);
@@ -838,7 +868,7 @@ async function handleApiStatus(_, response) {
         TWELVE_DATA_API_KEY: !!process.env.TWELVE_DATA_API_KEY,
         TWELVE_DATA_API_KEY_BACKUP: !!process.env.TWELVE_DATA_API_KEY_BACKUP,
         GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
-        KV_CONFIGURED: !!(process.env.KV_URL && process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN)
+        KV_CONFIGURED: KV_ENABLED
       },
       apiStatus: apiKeyStatus,
       rateLimitStatus: {
@@ -961,34 +991,21 @@ async function handleGetStockData(request, response) {
         `global_intraday_${symbol}_${tradingDay}` : 
         `global_history_${symbol}_${tradingDay}`;
       
-      try {
-        const weekendData = await kv.get(weekendHistoryCacheKey);
-        if (weekendData) {
-          console.log(`Using weekend cache for ${symbol} from ${tradingDay}`);
-          historyData = weekendData;
-        }
-      } catch (kvError) {
-        console.error('Weekend cache lookup error:', kvError);
+      const weekendData = await safeKvGet(weekendHistoryCacheKey);
+      if (weekendData) {
+        console.log(`Using weekend cache for ${symbol} from ${tradingDay}`);
+        historyData = weekendData;
       }
     }
 
     let quoteData;
     
-    try {
-      quoteData = await kv.get(quoteCacheKey);
-      // 只在還沒有歷史數據時才嘗試從快取取得
-      if (!historyData) {
-        historyData = await kv.get(historyCacheKey);
-      }
-      console.log(`Cache lookup successful for ${symbol}. Quote cached: ${!!quoteData}, History cached: ${!!historyData}`);
-    } catch (kvError) {
-      console.error('KV Cache error:', kvError);
-      // Continue without cache if KV fails
-      quoteData = null;
-      if (!historyData) {
-        historyData = null;
-      }
+    quoteData = await safeKvGet(quoteCacheKey);
+    // 只在還沒有歷史數據時才嘗試從快取取得
+    if (!historyData) {
+      historyData = await safeKvGet(historyCacheKey);
     }
+    console.log(`Cache lookup for ${symbol}. Quote cached: ${!!quoteData}, History cached: ${!!historyData}`);
 
     // 獲取即時報價 (若快取中沒有) - 優先使用 Finnhub，失敗時使用 yfinance
     if (!quoteData) {
@@ -1061,17 +1078,13 @@ async function handleGetStockData(request, response) {
       
       // 🚀 改善快取策略 - 延長快取時間，減少 API 呼叫
       if (quoteData) {
-        try {
-          // 市場時間內快取30秒，市場關閉時快取10分鐘
-          const now = new Date();
-          const isMarketOpen = (now.getUTCHours() >= 13 && now.getUTCHours() <= 21); // 美股開市時間 (UTC)
-          const cacheTime = isMarketOpen ? 30 : 600; // 30秒 或 10分鐘
-          
-          await kv.set(quoteCacheKey, quoteData, { ex: cacheTime });
-          console.log(`Quote data cached for ${symbol} (${cacheTime}s)`);
-        } catch (kvError) {
-          console.error('KV Cache write error (quote):', kvError);
-        }
+        // 市場時間內快取30秒，市場關閉時快取10分鐘
+        const now = new Date();
+        const isMarketOpen = (now.getUTCHours() >= 13 && now.getUTCHours() <= 21); // 美股開市時間 (UTC)
+        const cacheTime = isMarketOpen ? 30 : 600; // 30秒 或 10分鐘
+        
+        await safeKvSet(quoteCacheKey, quoteData, { ex: cacheTime });
+        console.log(`Quote data cached for ${symbol} (${cacheTime}s)`);
       }
     }
 
@@ -1118,13 +1131,8 @@ async function handleGetStockData(request, response) {
 
       // 快取新獲取的歷史數據
       if (historyData && cacheTime) {
-        try {
-          await kv.set(historyCacheKey, historyData, { ex: cacheTime });
-          console.log(`[${new Date().toISOString()}] History data cached for ${symbol} with key: ${historyCacheKey}, expires in ${cacheTime} seconds`);
-        } catch (kvError) {
-          console.error('KV Cache write error (history):', kvError);
-          // Continue without caching if KV fails
-        }
+        await safeKvSet(historyCacheKey, historyData, { ex: cacheTime });
+        console.log(`[${new Date().toISOString()}] History data cached for ${symbol} with key: ${historyCacheKey}, expires in ${cacheTime} seconds`);
       }
     }
 
