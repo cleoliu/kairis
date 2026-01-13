@@ -154,6 +154,179 @@ async function getPolygonGroupedDaily(apiKey, date = null) {
   }
 }
 
+// 處理 Grouped Daily 請求
+async function handleGroupedDaily(request, response) {
+  try {
+    const { symbols } = request.query;
+    
+    if (!symbols) {
+      return response.status(400).json({ error: '必須提供 symbols 參數' });
+    }
+    
+    const polygonApiKey = process.env.POLYGON_API_KEY;
+    if (!polygonApiKey) {
+      return response.status(500).json({ error: 'POLYGON_API_KEY 未設定' });
+    }
+    
+    const symbolList = symbols.split(',').map(s => s.trim().replace(/\.US$/, ''));
+    console.log(`[${new Date().toISOString()}] Grouped daily request for ${symbolList.length} symbols`);
+    
+    // 獲取當前日期字符串
+    const today = new Date().toISOString().split('T')[0];
+    const groupedCacheKey = `grouped_daily_${today}`;
+    
+    // 嘗試從快取獲取
+    let stockMap;
+    try {
+      const cached = await kv.get(groupedCacheKey);
+      if (cached) {
+        console.log(`[${new Date().toISOString()}] Using cached grouped daily data`);
+        stockMap = new Map(Object.entries(cached));
+      }
+    } catch (kvError) {
+      console.error('KV Cache read error:', kvError);
+    }
+    
+    // 如果快取中沒有，從 API 獲取
+    if (!stockMap) {
+      stockMap = await getPolygonGroupedDaily(polygonApiKey);
+      
+      if (!stockMap) {
+        return response.status(500).json({ error: '無法獲取 grouped daily 數據' });
+      }
+      
+      // 快取到收盤時間
+      try {
+        const now = new Date();
+        const marketCloseUTC = new Date(now);
+        marketCloseUTC.setUTCHours(21, 0, 0, 0);
+        
+        const cacheTime = now < marketCloseUTC 
+          ? Math.floor((marketCloseUTC - now) / 1000)
+          : 86400 * 7;
+        
+        // 轉換 Map 為 Object 以便快取
+        const cacheData = Object.fromEntries(stockMap);
+        await kv.set(groupedCacheKey, cacheData, { ex: cacheTime });
+        console.log(`[${new Date().toISOString()}] Grouped daily data cached for ${cacheTime}s`);
+      } catch (kvError) {
+        console.error('KV Cache write error:', kvError);
+      }
+    }
+    
+    // 提取用戶請求的股票數據
+    const result = {};
+    symbolList.forEach(symbol => {
+      const data = stockMap.get(symbol);
+      if (data) {
+        result[symbol] = data;
+      }
+    });
+    
+    response.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate');
+    return response.status(200).json({
+      success: true,
+      count: Object.keys(result).length,
+      requested: symbolList.length,
+      data: result
+    });
+    
+  } catch (error) {
+    console.error('handleGroupedDaily Error:', error);
+    return response.status(500).json({ 
+      error: '獲取 grouped daily 數據時發生錯誤',
+      details: error.message 
+    });
+  }
+}
+
+// 處理緩存預熱請求 - 供 n8n 每日定時調用
+async function handleWarmupCache(request, response) {
+  try {
+    const { symbols, secret } = request.query;
+    
+    // 驗證密鑰
+    const expectedSecret = process.env.WARMUP_SECRET || 'change-me-in-production';
+    if (secret !== expectedSecret) {
+      return response.status(401).json({ error: '未授權的請求' });
+    }
+    
+    if (!symbols) {
+      return response.status(400).json({ error: '必須提供 symbols 參數' });
+    }
+    
+    const polygonApiKey = process.env.POLYGON_API_KEY;
+    const finnhubApiKey = process.env.FINNHUB_API_KEY;
+    
+    if (!polygonApiKey || !finnhubApiKey) {
+      return response.status(500).json({ error: 'API keys 未設定' });
+    }
+    
+    const symbolList = symbols.split(',').map(s => s.trim());
+    console.log(`[${new Date().toISOString()}] 🔥 Warmup cache request for ${symbolList.length} symbols`);
+    
+    const results = {
+      success: [],
+      failed: [],
+      total: symbolList.length
+    };
+    
+    // 批次處理，每批3個股票
+    const BATCH_SIZE = 3;
+    for (let i = 0; i < symbolList.length; i += BATCH_SIZE) {
+      const batch = symbolList.slice(i, i + BATCH_SIZE);
+      
+      await Promise.allSettled(
+        batch.map(async (symbol) => {
+          try {
+            const cleanSymbol = symbol.replace(/\.US$/, '');
+            const today = new Date().toISOString().split('T')[0];
+            
+            // 獲取歷史數據
+            const historyResult = await fetchHistoricalData(cleanSymbol, null, finnhubApiKey, polygonApiKey);
+            
+            if (historyResult?.data) {
+              // 緩存歷史數據
+              const historyCacheKey = `global_history_${symbol}_${today}`;
+              const cacheTime = 86400 * 7; // 7天
+              
+              await kv.set(historyCacheKey, historyResult.data, { ex: cacheTime });
+              
+              console.log(`[${new Date().toISOString()}] ✅ Cached ${symbol}: ${historyResult.data.length} data points`);
+              results.success.push(symbol);
+            } else {
+              throw new Error('No data returned');
+            }
+          } catch (error) {
+            console.error(`[${new Date().toISOString()}] ❌ Failed to cache ${symbol}:`, error.message);
+            results.failed.push({ symbol, error: error.message });
+          }
+        })
+      );
+      
+      // 避免 API rate limit，批次之間等待
+      if (i + BATCH_SIZE < symbolList.length) {
+        await new Promise(resolve => setTimeout(resolve, 15000)); // 等待15秒
+      }
+    }
+    
+    console.log(`[${new Date().toISOString()}] 🎉 Warmup completed: ${results.success.length}/${results.total} successful`);
+    
+    return response.status(200).json({
+      success: true,
+      message: 'Cache warmup completed',
+      results
+    });
+    
+  } catch (error) {
+    console.error('handleWarmupCache Error:', error);
+    return response.status(500).json({ 
+      error: '緩存預熱時發生錯誤',
+      details: error.message 
+    });
+  }
+}
+
 // yfinance 數據獲取函數 - 備用數據源
 async function getYfinanceData(cleanSymbol, timeframe) {
   try {
@@ -340,6 +513,10 @@ export default async function handler(request, response) {
       return handleGetNews(request, response);
     } else if (action === 'api_status') {
       return handleApiStatus(request, response);
+    } else if (action === 'grouped_daily') {
+      return handleGroupedDaily(request, response);
+    } else if (action === 'warmup_cache') {
+      return handleWarmupCache(request, response);
     }
     return handleGetStockData(request, response);
   } else if (request.method === 'POST') {
