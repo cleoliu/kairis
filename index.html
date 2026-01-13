@@ -515,13 +515,15 @@ const App = {
         
         // 🚀 檢查快取，如果有資料就立即返回 (樂觀更新)
         if (this.state.stockDataCache[cacheKey] && !this.state.stockDataCache[cacheKey].error && !forceRefresh) {
-            console.log(`Using cached data for ${symbol}${timeframe ? ` (${timeframe})` : ''}`);
+            const cacheAge = Date.now() - (this.state.stockDataCache[cacheKey]._fetchTime || 0);
+            const cacheAgeMinutes = Math.floor(cacheAge / 60000);
+            console.log(`📦 [CACHED] ${symbol}${timeframe ? ` (${timeframe})` : ''} - 快取時間: ${cacheAgeMinutes}分鐘前`);
             
             // 背景更新：如果資料超過2分鐘，在背景重新載入
-            const cacheAge = Date.now() - (this.state.stockDataCache[cacheKey]._fetchTime || 0);
             if (cacheAge > 120000) { // 2分鐘
-                console.log(`Background refresh for ${symbol}`);
+                console.log(`🔄 [BACKGROUND REFRESH] ${symbol} - 背景更新中...`);
                 this.fetchStockData(symbol, true, timeframe).then(() => {
+                    console.log(`✅ [BACKGROUND REFRESH] ${symbol} - 完成`);
                     this.render(); // 靜默更新 UI
                 }).catch(console.error);
             }
@@ -539,12 +541,13 @@ const App = {
 
         try {
             const url = timeframe ? `/api/get-stock-data?symbol=${symbol}&timeframe=${timeframe}` : `/api/get-stock-data?symbol=${symbol}`;
-            console.log(`[${new Date().toISOString()}] Fetching data from API for ${symbol}${timeframe ? ` (${timeframe})` : ''}`);
+            const startTime = Date.now();
+            console.log(`🌐 [API REQUEST] ${symbol}${timeframe ? ` (${timeframe})` : ''} - 從 API 獲取資料...`);
             
             // 🚀 加入 fetch 超時機制 - 調整到 45 秒 (股票API較慢)
             const controller = new AbortController();
             const timeoutId = setTimeout(() => {
-                console.warn(`⏰ ${symbol} API 請求超過 45 秒，中止請求`);
+                console.warn(`⏰ [TIMEOUT] ${symbol} - API 請求超過 45 秒，中止請求`);
                 controller.abort();
             }, 45000); // 45秒超時
             
@@ -557,9 +560,10 @@ const App = {
             clearTimeout(timeoutId);
             
             const data = await response.json();
+            const responseTime = Date.now() - startTime;
 
             if (!response.ok) {
-                console.error(`API error for ${symbol}:`, data.error);
+                console.error(`❌ [API ERROR] ${symbol}: ${data.error}`);
                 const errorData = { error: data.error || '獲取資料失敗' };
                 this.state.stockDataCache[cacheKey] = errorData;
                 return errorData;
@@ -569,6 +573,8 @@ const App = {
             const currency = market === 'TW' ? 'NT$' : '$';
             const processedData = { ...data, name: data.name || symbol, market, currency, pe: data.pe || null };
             this.state.stockDataCache[cacheKey] = processedData;
+            
+            console.log(`✅ [API SUCCESS] ${symbol}${timeframe ? ` (${timeframe})` : ''} - 耗時: ${responseTime}ms`);
             return processedData;
 
         } catch (error) {
