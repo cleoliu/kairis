@@ -606,7 +606,7 @@ async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey, polygo
       if (polygonResult && polygonResult.history && Array.isArray(polygonResult.history) && polygonResult.history.length > 0) {
         historyData = polygonResult.history;
         console.log(`[${new Date().toISOString()}] ✅ Polygon.io success: ${historyData.length} data points for ${cleanSymbol}`);
-        return { data: historyData, cacheTime };
+        return { data: historyData, cacheTime, source: 'Polygon.io' };
       }
     } catch (error) {
       console.warn(`[${new Date().toISOString()}] Polygon.io failed for ${cleanSymbol}, trying fallback:`, error.message);
@@ -626,7 +626,7 @@ async function fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey, polygo
       apiKeyStatus.yfinance.lastUsed = new Date().toISOString();
       
       console.log(`[${new Date().toISOString()}] ✅ yfinance fallback success: ${historyData.length} data points for ${cleanSymbol}`);
-      return { data: historyData, cacheTime };
+      return { data: historyData, cacheTime, source: 'Yahoo Finance' };
     } else {
       throw new Error('yfinance returned empty data');
     }
@@ -1010,15 +1010,25 @@ async function handleGetStockData(request, response) {
     }
 
     let quoteData;
+    let quoteSource = 'API';
     
-    quoteData = await safeKvGet(quoteCacheKey);
-    // 只在還沒有歷史數據時才嘗試從快取取得
+    // 即時報價不使用快取，每次都從 API 取得最新資料
+    // quoteData = await safeKvGet(quoteCacheKey);
+    
+    // 檢查歷史數據快取
+    let historySource = '快取';
     if (!historyData) {
       historyData = await safeKvGet(historyCacheKey);
+      if (!historyData) {
+        historySource = '即時API';
+      }
     }
-    console.log(`Cache lookup for ${symbol}. Quote cached: ${!!quoteData}, History cached: ${!!historyData}`);
+    
+    console.log(`\n📊 ${symbol} 資料來源:`);
+    console.log(`  💰 即時報價: ${quoteSource} (不快取)`);
+    console.log(`  📈 歷史資料: ${historyData ? '快取' : '即時API'}`);
 
-    // 獲取即時報價 (若快取中沒有) - 優先使用 Finnhub，失敗時使用 yfinance
+    // 獲取即時報價 - 每次都從 API 取得 - 優先使用 Finnhub，失敗時使用 yfinance
     if (!quoteData) {
       const finnhubSymbol = symbol.replace(/\.US$/, '');
       
@@ -1034,7 +1044,7 @@ async function handleGetStockData(request, response) {
           const quoteJson = await finnhubQuoteResponse.json();
 
           if (quoteJson.c && quoteJson.c !== 0) {
-            console.log(`Successfully used Finnhub for quote data: ${symbol}`);
+            console.log(`  ✅ 即時報價來源: Finnhub API`);
             quoteData = {
                 name: profileJson.name || symbol,
                 price: quoteJson.c,
@@ -1044,15 +1054,15 @@ async function handleGetStockData(request, response) {
                 low: quoteJson.l,
             };
           } else {
-            console.warn(`Finnhub returned invalid quote data for ${symbol}, trying yfinance fallback`);
+            console.warn(`  ⚠️ Finnhub 回傳無效資料，嘗試 Yahoo Finance`);
             throw new Error('Invalid Finnhub data');
           }
         } else {
-          console.warn(`Finnhub API error for ${symbol} (${profileResponse.status}/${finnhubQuoteResponse.status}), trying yfinance fallback`);
+          console.warn(`  ⚠️ Finnhub API 錯誤 (${profileResponse.status}/${finnhubQuoteResponse.status})，嘗試 Yahoo Finance`);
           throw new Error('Finnhub API error');
         }
       } catch (finnhubError) {
-        console.log(`Finnhub failed for ${symbol}, trying yfinance as fallback:`, finnhubError.message);
+        console.log(`  🔄 切換到 Yahoo Finance 備用 API`);
         
         // 使用 yfinance 作為備用方案獲取即時報價
         try {
@@ -1066,7 +1076,7 @@ async function handleGetStockData(request, response) {
             const change = latestData.close - previousData.close;
             const changePercent = previousData.close !== 0 ? (change / previousData.close) * 100 : 0;
             
-            console.log(`Successfully used yfinance for quote data: ${symbol}`);
+            console.log(`  ✅ 即時報價來源: Yahoo Finance API (備用)`);
             quoteData = {
               name: yfinanceData.name || symbol,
               price: latestData.close,
@@ -1087,16 +1097,6 @@ async function handleGetStockData(request, response) {
         }
       }
       
-      // 🚀 改善快取策略 - 延長快取時間，減少 API 呼叫
-      if (quoteData) {
-        // 市場時間內快取30秒，市場關閉時快取10分鐘
-        const now = new Date();
-        const isMarketOpen = (now.getUTCHours() >= 13 && now.getUTCHours() <= 21); // 美股開市時間 (UTC)
-        const cacheTime = isMarketOpen ? 30 : 600; // 30秒 或 10分鐘
-        
-        await safeKvSet(quoteCacheKey, quoteData, { ex: cacheTime });
-        console.log(`Quote data cached for ${symbol} (${cacheTime}s)`);
-      }
     }
 
     // 從多個數據源獲取歷史資料 (若快取中沒有)
@@ -1118,7 +1118,7 @@ async function handleGetStockData(request, response) {
       }
 
       if (!historyData) {
-        console.log(`[${new Date().toISOString()}] Fetching fresh historical data for ${symbol} on trading day ${tradingDay} (requested: ${today})`);
+        console.log(`  🌐 從即時 API 獲取歷史資料...`);
         
         // 創建一個 Promise 來獲取數據，並將其存儲在 pendingRequests 中
         const fetchPromise = fetchHistoricalData(cleanSymbol, timeframe, finnhubApiKey, polygonApiKey);
@@ -1128,8 +1128,9 @@ async function handleGetStockData(request, response) {
           const result = await fetchPromise;
           historyData = result.data;
           cacheTime = result.cacheTime;
+          console.log(`  ✅ 歷史資料來源: ${result.source || 'API'}`);
         } catch (error) {
-          console.error(`[${new Date().toISOString()}] Data fetch failed for ${cleanSymbol}:`, error);
+          console.error(`  ❌ 歷史資料獲取失敗:`, error.message);
           return response.status(404).json({ 
             error: `無法獲取 ${cleanSymbol} 的歷史資料`,
             details: error.message
@@ -1138,6 +1139,8 @@ async function handleGetStockData(request, response) {
           // 無論成功或失敗都要清理 pending request
           pendingRequests.delete(requestKey);
         }
+      } else {
+        console.log(`  ✅ 歷史資料來源: Vercel KV 快取`);
       }
 
       // 快取新獲取的歷史數據
