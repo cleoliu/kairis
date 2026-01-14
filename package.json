@@ -4,7 +4,8 @@
   "description": "Stock analysis PWA with multi-source data integration",
   "dependencies": {
     "@vercel/kv": "^1.0.1",
-    "dotenv": "^17.2.3"
+    "dotenv": "^17.2.3",
+    "firebase-admin": "^12.0.0"
   },
   "engines": {
     "node": "22.x"
