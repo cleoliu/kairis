@@ -1043,7 +1043,7 @@ async function handleGetStockData(request, response) {
           const quoteJson = await finnhubQuoteResponse.json();
 
           if (quoteJson.c && quoteJson.c !== 0) {
-            console.log(`  ✅ 即時報價來源: Finnhub API`);
+            console.log(`  ✅ ${symbol} 即時報價來源: Finnhub API`);
             quoteData = {
                 name: profileJson.name || symbol,
                 price: quoteJson.c,
@@ -1075,7 +1075,7 @@ async function handleGetStockData(request, response) {
             const change = latestData.close - previousData.close;
             const changePercent = previousData.close !== 0 ? (change / previousData.close) * 100 : 0;
             
-            console.log(`  ✅ 即時報價來源: Yahoo Finance API (備用)`);
+            console.log(`  ✅ ${symbol} 即時報價來源: Yahoo Finance API (備用)`);
             quoteData = {
               name: yfinanceData.name || symbol,
               price: latestData.close,
@@ -1127,9 +1127,9 @@ async function handleGetStockData(request, response) {
           const result = await fetchPromise;
           historyData = result.data;
           cacheTime = result.cacheTime;
-          console.log(`  ✅ 歷史資料來源: ${result.source || 'API'}`);
+          console.log(`  ✅ ${symbol} 歷史資料來源: ${result.source || 'API'}`);
         } catch (error) {
-          console.error(`  ❌ 歷史資料獲取失敗:`, error.message);
+          console.error(`  ❌ ${symbol} 歷史資料獲取失敗:`, error.message);
           return response.status(404).json({ 
             error: `無法獲取 ${cleanSymbol} 的歷史資料`,
             details: error.message
@@ -1139,7 +1139,7 @@ async function handleGetStockData(request, response) {
           pendingRequests.delete(requestKey);
         }
       } else {
-        console.log(`  ✅ 歷史資料來源: Vercel KV 快取`);
+        console.log(`  ✅ ${symbol} 歷史資料來源: Vercel KV 快取`);
       }
 
       // 快取新獲取的歷史數據

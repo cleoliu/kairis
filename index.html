@@ -574,7 +574,13 @@ const App = {
             const processedData = { ...data, name: data.name || symbol, market, currency, pe: data.pe || null };
             this.state.stockDataCache[cacheKey] = processedData;
             
+            // 詳細顯示資料來源
             console.log(`%c✅ [API完成] ${symbol}${timeframe ? ` (${timeframe})` : ''} - 耗時: ${responseTime}ms`, 'color: #3b82f6; font-weight: bold');
+            console.log(`  📊 資料內容:`, {
+                即時報價: `${data.price} (${data.changePercent >= 0 ? '+' : ''}${data.changePercent?.toFixed(2)}%)`,
+                歷史資料筆數: data.history?.length || 0,
+                股票名稱: data.name
+            });
             return processedData;
 
         } catch (error) {
