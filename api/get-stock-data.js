@@ -1010,23 +1010,22 @@ async function handleGetStockData(request, response) {
     }
 
     let quoteData;
-    let quoteSource = 'API';
     
     // 即時報價不使用快取，每次都從 API 取得最新資料
     // quoteData = await safeKvGet(quoteCacheKey);
     
     // 檢查歷史數據快取
-    let historySource = '快取';
     if (!historyData) {
       historyData = await safeKvGet(historyCacheKey);
-      if (!historyData) {
-        historySource = '即時API';
-      }
     }
     
-    console.log(`\n📊 ${symbol} 資料來源:`);
-    console.log(`  💰 即時報價: ${quoteSource} (不快取)`);
-    console.log(`  📈 歷史資料: ${historyData ? '快取' : '即時API'}`);
+    console.log(`\n📊 ${symbol} 資料來源檢查:`);
+    console.log(`  💰 即時報價: 每次從 API 取得 (不快取)`);
+    if (historyData) {
+      console.log(`  ✅ 歷史資料: 從 Vercel KV 快取讀取 (${historyData.length || 0} 筆)`);
+    } else {
+      console.log(`  📈 歷史資料: 快取未命中，準備從 API 取得`);
+    }
 
     // 獲取即時報價 - 每次都從 API 取得 - 優先使用 Finnhub，失敗時使用 yfinance
     if (!quoteData) {
