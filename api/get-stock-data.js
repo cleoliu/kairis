@@ -432,7 +432,7 @@ async function handleWarmupCache(request, response) {
     }
     
     // 驗證密鑰
-    const expectedSecret = process.env.WARMUP_SECRET || 'change-me-in-production';
+    const expectedSecret = process.env.N8N_SECRET || 'change-me-in-production';
     if (secret !== expectedSecret) {
       console.error(`[${new Date().toISOString()}] Auth failed: expected="${expectedSecret}", received="${secret}"`);
       return response.status(401).json({ error: '未授權的請求' });
