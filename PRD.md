@@ -94,6 +94,7 @@
 - **後端**: [Vercel](https://vercel.com/) 無伺服器函式 (Serverless Functions)。
 - **資料庫**: Google [Firebase](https://firebase.google.com/) (Firestore) 用於儲存使用者自選股，並支援匿名登入與 Google 登入。
 - **快取系統**: [Vercel KV](https://vercel.com/docs/storage/vercel-kv) (基於 Redis) 用於提升 API 性能。
+- **自動化整合**: [n8n](https://n8n.io/) 用於定時預熱快取與自動化工作流程。
 - **API 組合**:
   - [Polygon.io](https://polygon.io/): **主要數據源**，用於獲取美股歷史 K 線數據（免費版限制：5 次/分鐘，速度快）。
   - [Finnhub](https://finnhub.io/): 用於獲取美股即時報價與公司新聞（免費版限制：無歷史 K 線數據）。
@@ -130,11 +131,24 @@
       - `POLYGON_API_KEY`: 從 Polygon.io 獲取的 API 金鑰（**必須**）
       - `FINNHUB_API_KEY`: 從 Finnhub 獲取的 API 金鑰
       - `GEMINI_API_KEY`: 從 Google AI Studio 獲取的 API 金鑰
+      - `N8N_SECRET`: 用於 n8n 自動化工作流程的密鑰（自行設定）
+      - `WATCHLIST_FIREBASE_PROJECT_ID`: Firebase 專案 ID（從 Service Account JSON 取得）
+      - `WATCHLIST_FIREBASE_CLIENT_EMAIL`: Firebase Service Account Email
+      - `WATCHLIST_FIREBASE_PRIVATE_KEY`: Firebase Service Account 私鑰
     - 設定 Vercel KV 快取:
       - 「Storage」分頁，選擇「Upstash」>「Upstash for Redis」，點擊「Create」按鈕
       - 選擇「free」方案、選擇鄰近地區
       - 點選「連結專案」，會自動在專案中，加入所有連接 KV 資料庫所需要的環境變數 (例如 KV_URL, KV_REST_API_URL, KV_REST_API_TOKEN 等)。
     - 點擊「Deploy」。
+
+4.  **設定 Firebase Service Account（用於 n8n 整合）**:
+    - 前往 [Firebase Console](https://console.firebase.google.com/) → 選擇專案
+    - 點擊左側齒輪圖示 ⚙️ → `Project settings` → `Service accounts` 標籤
+    - 點擊「Generate new private key」下載 JSON 檔案
+    - 將 JSON 檔案中的以下欄位複製到 Vercel 環境變數：
+      - `project_id` → `WATCHLIST_FIREBASE_PROJECT_ID`
+      - `client_email` → `WATCHLIST_FIREBASE_CLIENT_EMAIL`
+      - `private_key` → `WATCHLIST_FIREBASE_PRIVATE_KEY`（包含 `-----BEGIN PRIVATE KEY-----` 和 `-----END PRIVATE KEY-----`）
 
 ## 6. API 限制與已知問題
 
@@ -188,7 +202,50 @@
 - **API 限制**: 顯示具體錯誤原因和建議
 - **快取失敗**: 自動跳過快取，直接從 API 獲取數據
 
-## 7. 未來發展 (Future Roadmap)
+## 7. n8n 自動化整合
+
+### 7.1 可用 API 端點
+
+#### 取得所有用戶 Watchlist
+```
+GET /api/get-all-watchlists?secret=YOUR_N8N_SECRET
+```
+
+**回應格式：**
+```json
+{
+  "success": true,
+  "timestamp": "2026-01-14T...",
+  "totalUsers": 10,
+  "totalUniqueSymbols": 25,
+  "data": [
+    {
+      "userId": "user123",
+      "watchlist": ["AAPL.US", "TSLA.US"]
+    }
+  ],
+  "allSymbols": ["AAPL.US", "GOOGL.US", "TSLA.US", ...]
+}
+```
+
+#### 預熱快取（定時任務）
+```
+GET /api/get-stock-data?action=warmup_cache&symbols=AAPL,TSLA&secret=YOUR_N8N_SECRET
+```
+
+**用途：**
+- n8n 每日定時呼叫 `/api/get-all-watchlists` 取得所有用戶的 watchlist
+- 將所有唯一股票代號組合成字串
+- 呼叫 `/api/get-stock-data?action=warmup_cache` 預熱快取
+- 提升用戶首次載入速度
+
+### 7.2 權限說明
+
+**前端（用戶端）**：使用 Firebase Client SDK，需要用戶登入，只能存取自己的資料。
+
+**後端（n8n）**：使用 Firebase Admin SDK，不需要用戶登入，可存取所有用戶資料，用於自動化工作流程。
+
+## 8. 未來發展 (Future Roadmap)
 
 - **批量查詢優化**: 使用 Polygon.io Grouped Daily API 實現一次性獲取所有自選股數據
 - **升級 API 方案**: 考慮付費 API 以解除限制並支援更多市場
@@ -196,8 +253,22 @@
 - **自訂掃描條件**: 讓使用者可以自訂「機會掃描」的篩選策略
 - **資料快取優化**: 改善快取策略以減少 API 呼叫次數
 - **多語言支援**: 擴展至英文等其他語言介面
+- **進階 n8n 自動化**: 股價提醒、異常波動通知、每日報告生成
 
-## 8. 技術變更記錄
+## 9. 技術變更記錄
+
+### 2026-01-14: 新增 n8n 自動化整合 API
+- **新增功能**: 
+  - 新增 `/api/get-all-watchlists` 端點，供 n8n 取得所有用戶 watchlist
+  - 整合 Firebase Admin SDK 用於後端管理員權限存取
+  - 統一使用 `N8N_SECRET` 環境變數進行 API 認證
+- **用途**:
+  - 支援 n8n 定時工作流程
+  - 自動預熱所有用戶關注的股票快取
+  - 為未來進階自動化功能奠定基礎
+- **安全性**:
+  - 使用密鑰驗證機制保護 API
+  - 前後端分離權限（Client SDK vs Admin SDK）
 
 ### 2026-01-13: 更換主要數據源為 Polygon.io
 - **原因**: Yahoo Finance API 速度較慢，影響使用者體驗

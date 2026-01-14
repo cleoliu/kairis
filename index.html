@@ -517,7 +517,7 @@ const App = {
         if (this.state.stockDataCache[cacheKey] && !this.state.stockDataCache[cacheKey].error && !forceRefresh) {
             const cacheAge = Date.now() - (this.state.stockDataCache[cacheKey]._fetchTime || 0);
             const cacheAgeMinutes = Math.floor(cacheAge / 60000);
-            console.log(`📦 [CACHED] ${symbol}${timeframe ? ` (${timeframe})` : ''} - 快取時間: ${cacheAgeMinutes}分鐘前`);
+            console.log(`%c✅ [快取] ${symbol}${timeframe ? ` (${timeframe})` : ''} - 快取時間: ${cacheAgeMinutes}分鐘前`, 'color: #10b981; font-weight: bold');
             
             // 背景更新：如果資料超過2分鐘，在背景重新載入
             if (cacheAge > 120000) { // 2分鐘
@@ -542,7 +542,7 @@ const App = {
         try {
             const url = timeframe ? `/api/get-stock-data?symbol=${symbol}&timeframe=${timeframe}` : `/api/get-stock-data?symbol=${symbol}`;
             const startTime = Date.now();
-            console.log(`🌐 [API REQUEST] ${symbol}${timeframe ? ` (${timeframe})` : ''} - 從 API 獲取資料...`);
+            console.log(`%c🌐 [即時API] ${symbol}${timeframe ? ` (${timeframe})` : ''} - 從 API 獲取資料...`, 'color: #f59e0b; font-weight: bold');
             
             // 🚀 加入 fetch 超時機制 - 調整到 45 秒 (股票API較慢)
             const controller = new AbortController();
@@ -574,7 +574,7 @@ const App = {
             const processedData = { ...data, name: data.name || symbol, market, currency, pe: data.pe || null };
             this.state.stockDataCache[cacheKey] = processedData;
             
-            console.log(`✅ [API SUCCESS] ${symbol}${timeframe ? ` (${timeframe})` : ''} - 耗時: ${responseTime}ms`);
+            console.log(`%c✅ [API完成] ${symbol}${timeframe ? ` (${timeframe})` : ''} - 耗時: ${responseTime}ms`, 'color: #3b82f6; font-weight: bold');
             return processedData;
 
         } catch (error) {
